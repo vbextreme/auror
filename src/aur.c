@@ -64,6 +64,7 @@ jvalue_s* aur_info_call(aur_s* aur, char** pkg){
 	}
 	
 	rr.body = mem_nullterm(rr.body);
+	dbg_info("<INFO REPLY>%s</INFO REPLY>", rr.body);
 	jvalue_s* out = json_decode(rr.body, NULL, NULL);
 	if( !out ){
 		mem_free(rr.body);
@@ -125,6 +126,9 @@ ddatabase_s* aur_search_test(jvalue_s* jret, const char* name, fzs_s** matchs){
 }
 
 __private void sync_pkg_push(aurSync_s* sync, char* name, unsigned flags){
+	mforeach(sync->pkg, i){
+		if( !strcmp(sync->pkg[i].name, name) ) return;
+	}
 	pkgInfo_s* ref;
 	sync->pkg = mem_upsize(sync->pkg, 1);
 	ref = &sync->pkg[mem_header(sync->pkg)->len++];
@@ -132,7 +136,7 @@ __private void sync_pkg_push(aurSync_s* sync, char* name, unsigned flags){
 	ref->flags = flags;
 }
 
-void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsigned flags){
+void aur_dependency_resolve(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsigned flags){
 	__free char** aurreq = MANY(char*, 4);
 	mforeach(name, i){
 		desc_s* localpkg = pacman_pkg_search(pacman, name[i]);
@@ -144,6 +148,11 @@ void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsign
 		}
 		else{
 			dbg_info("add aur request '%s'", name[i]);
+			if( flags & (PKGINFO_FLAG_DEPENDENCY | PKGINFO_FLAG_BUILD_DEPENDENCY) ){
+				printf("aur package require dependency %s coming from aur\n", name[i]);
+				fputs("I proceed with the installation?\n", stdout);
+				if( !readline_yesno() ) die("terminated at the user's discretion");
+			}
 			aurreq = mem_upsize(aurreq, 1);
 			aurreq[mem_header(aurreq)->len++] = name[i];
 		}
@@ -164,7 +173,7 @@ void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsign
 			desc_s* localpkg = pacman_pkg_search(pacman, name->s);
 			if( !localpkg ){
 				dbg_info("install '%s' with aur", name->s);
-				sync_pkg_push(sync, name->s, 0);
+				sync_pkg_push(sync, name->s, flags & (~SYNC_REINSTALL));
 			}
 			else{
 				char* localversion = desc_value_version(localpkg);
@@ -184,7 +193,7 @@ void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsign
 					namedeps[id] = depends->a[id].s;
 				}
 				mem_header(namedeps)->len = mem_header(depends->a)->len;
-				aur_sync(aur, pacman, sync, namedeps, PKGINFO_FLAG_DEPENDENCY | flags);
+				aur_dependency_resolve(aur, pacman, sync, namedeps, PKGINFO_FLAG_DEPENDENCY | flags);
 			}
 			
 			if( mem_header(makedepends->a)->len ){
@@ -194,7 +203,7 @@ void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsign
 					makedeps[id] = makedepends->a[id].s;
 				}
 				mem_header(makedeps)->len = mem_header(makedepends->a)->len;
-				aur_sync(aur, pacman, sync, makedeps, PKGINFO_FLAG_BUILD_DEPENDENCY | flags);
+				aur_dependency_resolve(aur, pacman, sync, makedeps, PKGINFO_FLAG_BUILD_DEPENDENCY | flags);
 			}
 		}
 	}
@@ -202,7 +211,8 @@ void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsign
 	if( !mem_header(sync->pkg)->len ){
 		die("up to date");
 	}
-	
+
+/*	
 	unsigned totaldepsaur = 0;
 	mforeach(sync->pkg, i){
 		if( (sync->pkg->flags & PKGINFO_FLAG_DEPENDENCY) && !(sync->pkg->flags & DB_FLAG_UPSTREAM) ){
@@ -225,18 +235,8 @@ void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsign
 		putchar('\n');
 		fputs("I proceed with the installation? ", stdout);
 		if( !readline_yesno() ) die("terminated at the user's discretion");
-	}
-	
-	mforeach(sync->pkg, i){
-		printf("[%s/%s] ", (sync->pkg[i].flags & DB_FLAG_UPSTREAM ? "upstream": "aur"),  sync->pkg[i].name);
-		if( sync->pkg[i].flags & PKGINFO_FLAG_DEPENDENCY ){
-			printf("(dependency)");
-		}
-		if( sync->pkg[i].flags & PKGINFO_FLAG_DEPENDENCY ){
-			printf("(make dependency)");
-		}
-		puts("");
-	}
+	}	
+*/
 }
 
 

@@ -37,9 +37,9 @@ typedef struct aur{
 aur_s* aur_ctor(aur_s* aur);
 aur_s* aur_dtor(aur_s* aur);
 ddatabase_s* aur_search(aur_s* aur, const char* name, fzs_s** matchs);
-
 ddatabase_s* aur_search_test(jvalue_s* jret, const char* name, fzs_s** matchs);
 
+void aur_dependency_resolve(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsigned flags);
 //aur dir cache : ~/.cache/auror
 //aur download 
 //

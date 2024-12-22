@@ -88,17 +88,23 @@ jvalue_s* jvalue_array_new(jvalue_s* jv){
 	jv->a = mem_upsize(jv->a, 1);
 	jvalue_s* ret = &jv->a[mem_header(jv->a)->len++];
 	ret->type   = JV_NULL;
-	ret->p      = NULL;
+	ret->p      = (void*)(~(uintptr_t)0);
 	ret->parent = jv;
 	return ret;
 }
 
 int jvalue_array_rollback(jvalue_s* jv){
-	if( jv->type != JV_ARRAY ) return -1;
+	if( jv->type != JV_ARRAY ){
+		return -1;
+	}
 	unsigned len = mem_header(jv->a)->len;
-	if( len <= 0 ) return -1;
+	if( len <= 0 ){
+		return -1;
+	}
 	jvalue_s* v = &jv->a[--len];
-	if( v != JV_NULL ) return -1;
+	if( v->type != JV_NULL ){
+		return -1;
+	}
 	mem_header(jv->a)->len = len;
 	return 0;
 }
@@ -341,7 +347,7 @@ __private char* json_parse_string(const char** outparse, const char** err){
 		}
 		else{
 			if( (long)len >= jslen ){
-				dbg_info("%.*s", (unsigned)jslen+1,start);	
+				dbg_info("%.*s", (unsigned)jslen+1,start);
 				die("len>=strlen (%ld)", jslen);
 			}
 			str[len++] = *parse++;
@@ -383,18 +389,18 @@ int json_decode_partial(jvalue_s* out, const char** par, const char** err){
 			*par = parse;
 			return -1;
 		}
-
+		
 		switch( *parse ){
-			default: 
+			default:
 				*err = "invalid charater, aspected element(num, string, array or object)"; 
 				*par = parse;
 			return -1;
-					
+			
 			case '{':
 				jv = jvalue_object_ctor(jv, jv->parent);
 				parse = json_parse_to_element(parse+1);
 			break;
-
+			
 			case '}':
 				if( jv->type != JV_OBJECT ){
 					*err = "object not openend or missing element after ,";
@@ -404,14 +410,13 @@ int json_decode_partial(jvalue_s* out, const char** par, const char** err){
 				jv = jv->parent;
 				parse = json_parse_to_element(parse+1);
 			break;
-
+			
 			case '[':
 				jv = jvalue_array_ctor(jv, jv->parent);
 				jv = jvalue_array_new(jv);
-				jv->p = (void*)(~(uintptr_t)0);
 				parse = json_parse_to_element(parse+1);
 			break;
-
+			
 			case ']':
 				if( jv->type != JV_ARRAY ){
 					if( !jv->parent || jv->parent->type != JV_ARRAY || jv->p != (void*)(~(uintptr_t)0) || jvalue_array_rollback(jv->parent) ){
@@ -424,7 +429,7 @@ int json_decode_partial(jvalue_s* out, const char** par, const char** err){
 				jv = jv->parent;
 				parse = json_parse_to_element(parse+1);
 			break;
-
+			
 			case ',':
 				switch( jv->type ){
 					case JV_OBJECT:
@@ -454,16 +459,15 @@ int json_decode_partial(jvalue_s* out, const char** par, const char** err){
 							return -1;
 						}
 						jv = jvalue_array_new(jv);
-						jv->p = (void*)(~(uintptr_t)0);
 					break;
-
+					
 					default: 
 						*err = "unaspected next";
 						*par = parse;
 					return -1;
 				}
 			break;
-
+			
 			case '"':
 				if( !(str=json_parse_string(&parse, err)) ){
 					*par = parse;
@@ -580,7 +584,6 @@ int json_decode_partial(jvalue_s* out, const char** par, const char** err){
 
 jvalue_s* json_decode(const char* str, const char** endstr, const char **outErr){
 	const char* err = NULL;
-	dbg_info("init ret value");
 	jvalue_s* jv = NEW(jvalue_s);
 	mem_header(jv)->cleanup = (mcleanup_f)jvalue_dtor;
 	jvalue_null_ctor(jv, NULL);

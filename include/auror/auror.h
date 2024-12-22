@@ -4,6 +4,7 @@
 typedef enum{
 	O_u,
 	O_s,
+	O_i,
 	O_n,
 	O_h
 }OPT_E;

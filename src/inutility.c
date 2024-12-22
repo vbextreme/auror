@@ -138,8 +138,8 @@ void print_repeat(unsigned count, const char ch){
 
 __private int isyesno(const char* in, int noyes){
 	__private char* noyesmap[][5] = {
-		{ "y", "yes", "Y", "Yes", "YES" },
-		{ "n", "no" , "N", "No" , "NO"  }
+		{ "n", "no" , "N", "No" , "NO"  },
+		{ "y", "yes", "Y", "Yes", "YES" }
 	};
 	in = str_skip_h(in);
 	for( unsigned i = 0; i < sizeof_vector(noyesmap); ++i ){
@@ -159,6 +159,7 @@ int readline_yesno(void){
 	int ret = 1;
 	while(1){
 		in = readline("[Yes/no]: ");
+		dbg_info("readline '%s'", in);
 		if( !in ) continue;
 		if( !*in ) break;
 		if( isyesno(in, 1) ) break;

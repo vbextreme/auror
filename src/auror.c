@@ -23,10 +23,11 @@
 //
 
 option_s OPT[] = {
-	{'u', "upgrade"        , "upgrade upstream and aur"                                           , OPT_NOARG, 0, 0},
-	{'s', "search"        , "search in upstream and aur"                                           , OPT_STR, 0, 0},
-	{'n', "--num-outputs" , "max output value", OPT_NUM, 0, 0},
-	{'h', "--help"           , "display this"                                                       , OPT_END | OPT_NOARG, 0, 0}
+	{'u', "upgrade"       , "upgrade upstream and aur",    OPT_NOARG, 0, 0},
+	{'s', "search"        , "search in upstream and aur",  OPT_STR, 0, 0},
+	{'i', "install"       , "install",                     OPT_ARRAY | OPT_STR, 0, 0},
+	{'n', "--num-outputs" , "max output value",            OPT_NUM, 0, 0},
+	{'h', "--help"        , "display this",                OPT_END | OPT_NOARG, 0, 0}
 };
 
 __private void print_matchs(fzs_s* matchs, const char* name, unsigned max){
@@ -54,18 +55,16 @@ __private void print_matchs(fzs_s* matchs, const char* name, unsigned max){
 int main(int argc, char** argv){
 	notstd_begin();
 	www_begin();
-
 	
 	__argv option_s* opt = argv_parse(OPT, argc, argv);
 	if( opt[O_h].set ) argv_usage(opt, argv[0]);
 
 	argv_default_num(opt, O_n, 0);
 
-	if( opt[O_u].set ){
+	if( opt[O_u].set ){ //TODO | opt[O_i].set,
 		pacman_upgrade();
 	}
 	
-		
 	pacman_s pacman;
 	pacman_ctor(&pacman);
 	aur_s aur;
@@ -92,6 +91,38 @@ int main(int argc, char** argv){
 	mem_free(search);
 	die("OK");
 	*/
+	
+	if( opt[O_i].set ){
+		aurSync_s async;
+		async.pkg = MANY(pkgInfo_s, 4);
+		char** pkgs = MANY(char*, opt[O_i].set);
+		for( unsigned i = 0; i < opt[O_i].set; ++i ){
+			pkgs[i] = (char*)opt[O_i].value[i].str;
+		}
+		mem_header(pkgs)->len = opt[O_i].set;
+		aur_dependency_resolve(&aur, &pacman, &async, pkgs, 0);
+		
+		//install pacman deps
+		//create sandbox
+		//install build deps
+		//makepkg
+		//check sandbox
+		//extract pkg
+		//~persistent delete sandbox
+		//install pkg with pacman
+
+		mforeach(async.pkg, i){
+			printf("[%s/%s] ", (async.pkg[i].flags & DB_FLAG_UPSTREAM ? "upstream": "aur"),  async.pkg[i].name);
+			if( async.pkg[i].flags & PKGINFO_FLAG_DEPENDENCY ){
+				printf("(dependency)");
+			}
+			if( async.pkg[i].flags & PKGINFO_FLAG_DEPENDENCY ){
+				printf("(make dependency)");
+			}
+			puts("");
+		}
+	
+	}
 	
 	if( opt[O_s].set ){
 		__free fzs_s* matchs = MANY(fzs_s, 64);
