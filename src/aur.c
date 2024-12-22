@@ -138,10 +138,12 @@ void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsign
 		desc_s* localpkg = pacman_pkg_search(pacman, name[i]);
 		if( localpkg && (localpkg->db->flags & DB_FLAG_UPSTREAM) ){
 			if( !(localpkg->flags & PKG_FLAG_INSTALL) ){
+				dbg_info("install '%s' with pacman", name[i]);
 				sync_pkg_push(sync, name[i], DB_FLAG_UPSTREAM);
 			}
 		}
 		else{
+			dbg_info("add aur request '%s'", name[i]);
 			aurreq = mem_upsize(aurreq, 1);
 			aurreq[mem_header(aurreq)->len++] = name[i];
 		}
@@ -161,11 +163,13 @@ void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsign
 		
 			desc_s* localpkg = pacman_pkg_search(pacman, name->s);
 			if( !localpkg ){
+				dbg_info("install '%s' with aur", name->s);
 				sync_pkg_push(sync, name->s, 0);
 			}
 			else{
 				char* localversion = desc_value_version(localpkg);
 				if( (flags & SYNC_REINSTALL) || vercmp(version->s, localversion) > 0 ){
+					dbg_info("upgrade '%s' with aur", name->s);
 					sync_pkg_push(sync, name->s, flags & (~SYNC_REINSTALL));
 				}
 				else{
@@ -173,19 +177,25 @@ void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsign
 				}
 			}
 			
-			__free char** namedeps = MANY(char*, mem_header(depends->a)->len);
-			mforeach(depends->a, id){
-				namedeps[id] = depends->a[id].s;
+			if( mem_header(depends->a)->len ){
+				__free char** namedeps = MANY(char*, mem_header(depends->a)->len);
+				mforeach(depends->a, id){
+					dbg_info("recursive resolve dependency %s", depends->a[id].s);
+					namedeps[id] = depends->a[id].s;
+				}
+				mem_header(namedeps)->len = mem_header(depends->a)->len;
+				aur_sync(aur, pacman, sync, namedeps, PKGINFO_FLAG_DEPENDENCY | flags);
 			}
-			mem_header(namedeps)->len = mem_header(depends->a)->len;
-			aur_sync(aur, pacman, sync, namedeps, PKGINFO_FLAG_DEPENDENCY | flags);
 			
-			__free char** makedeps = MANY(char*, mem_header(makedepends->a)->len);
-			mforeach(makedepends->a, id){
-				makedeps[id] = makedepends->a[id].s;
+			if( mem_header(makedepends->a)->len ){
+				__free char** makedeps = MANY(char*, mem_header(makedepends->a)->len);
+				mforeach(makedepends->a, id){
+					dbg_info("recursive resolve makedependency %s", makedepends->a[id].s);
+					makedeps[id] = makedepends->a[id].s;
+				}
+				mem_header(makedeps)->len = mem_header(makedepends->a)->len;
+				aur_sync(aur, pacman, sync, makedeps, PKGINFO_FLAG_BUILD_DEPENDENCY | flags);
 			}
-			mem_header(makedeps)->len = mem_header(makedepends->a)->len;
-			aur_sync(aur, pacman, sync, makedeps, PKGINFO_FLAG_BUILD_DEPENDENCY | flags);
 		}
 	}
 	
