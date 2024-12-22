@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <pwd.h>
 #include <limits.h>
+#include <readline/readline.h>
 
 char* load_file(const char* fname, int exists){
 	dbg_info("loading %s", fname);
@@ -134,4 +135,51 @@ void print_repeat(unsigned count, const char ch){
 	if( !count ) return;
 	while( count --> 0 ) fputc(ch, stdout);
 }
+
+__private int isyesno(const char* in, int noyes){
+	__private char* noyesmap[][5] = {
+		{ "y", "yes", "Y", "Yes", "YES" },
+		{ "n", "no" , "N", "No" , "NO"  }
+	};
+	in = str_skip_h(in);
+	for( unsigned i = 0; i < sizeof_vector(noyesmap); ++i ){
+		if( !strcmp(in, noyesmap[noyes][i]) ){
+			in += strlen(noyesmap[noyes][i]);
+			in = str_skip_h(in);
+			if( *in && *in != '\n' ) return 0;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int readline_yesno(void){
+	fflush(stdout);
+	char* in;
+	int ret = 1;
+	while(1){
+		in = readline("[Yes/no]: ");
+		if( !in ) continue;
+		if( !*in ) break;
+		if( isyesno(in, 1) ) break;
+		if( isyesno(in, 0) ) { ret = 0; break; }
+		free(in);
+	}
+	free(in);
+	return ret;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

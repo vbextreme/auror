@@ -138,3 +138,49 @@ void pacman_search(pacman_s* pacman, const char* name, fzs_s** matchs){
 	}
 }
 
+desc_s* pacman_pkg_search(pacman_s* pacman, const char* name){
+	desc_s* ret;
+	mforeach(pacman->db, idb){
+		if( pacman->db[idb]->flags & DB_FLAG_UPSTREAM ){
+			if( (ret=database_search_byname(pacman->db[idb], name)) ) return ret;
+		}
+	}
+	ddatabase_s* aur = pacman->db[pacman->iddbaur];
+	ret = database_search_byname(aur, name);
+	return ret;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

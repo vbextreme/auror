@@ -1,5 +1,7 @@
 #include <notstd/str.h>
 
+#include <auror/inutility.h>
+
 #define AUR_IMPLEMENT
 #include <auror/aur.h>
 
@@ -13,7 +15,7 @@ aur_s* aur_dtor(aur_s* aur){
 	return aur;
 }
 
-jvalue_s* aur_search_call(aur_s* aur, const char* search, const char* field){
+__private jvalue_s* aur_search_call(aur_s* aur, const char* search, const char* field){
 	__free char* escsearch = url_escape(search);
 	__free char* method = str_printf("/search/%s?by=%s", escsearch, field);
 	restret_s rr = restapi_call(&aur->ra, method);
@@ -121,6 +123,141 @@ ddatabase_s* aur_search_test(jvalue_s* jret, const char* name, fzs_s** matchs){
 	
 	return db;
 }
+
+__private void sync_pkg_push(aurSync_s* sync, char* name, unsigned flags){
+	pkgInfo_s* ref;
+	sync->pkg = mem_upsize(sync->pkg, 1);
+	ref = &sync->pkg[mem_header(sync->pkg)->len++];
+	ref->name  = mem_borrowed(name);
+	ref->flags = flags;
+}
+
+void aur_sync(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsigned flags){
+	__free char** aurreq = MANY(char*, 4);
+	mforeach(name, i){
+		desc_s* localpkg = pacman_pkg_search(pacman, name[i]);
+		if( localpkg && (localpkg->db->flags & DB_FLAG_UPSTREAM) ){
+			if( !(localpkg->flags & PKG_FLAG_INSTALL) ){
+				sync_pkg_push(sync, name[i], DB_FLAG_UPSTREAM);
+			}
+		}
+		else{
+			aurreq = mem_upsize(aurreq, 1);
+			aurreq[mem_header(aurreq)->len++] = name[i];
+		}
+	}
+	
+	if( mem_header(aurreq)->len ){
+		__free jvalue_s* req = aur_info_call(aur, aurreq);
+		if( !req ) die("not find packages");
+		aur_check_error(req);
+		
+		jvalue_s* results = jvalue_property_type(req, JV_ARRAY, "results");
+		mforeach(results->a, ia){
+			jvalue_s* depends =  jvalue_property_type(&results->a[ia], JV_ARRAY, "Depends");
+			jvalue_s* makedepends =  jvalue_property_type(&results->a[ia], JV_ARRAY, "MakeDepends");
+			jvalue_s* name =  jvalue_property_type(&results->a[ia], JV_STRING, "Name");
+			jvalue_s* version = jvalue_property_type(&results->a[ia], JV_STRING, "Version");
+		
+			desc_s* localpkg = pacman_pkg_search(pacman, name->s);
+			if( !localpkg ){
+				sync_pkg_push(sync, name->s, 0);
+			}
+			else{
+				char* localversion = desc_value_version(localpkg);
+				if( (flags & SYNC_REINSTALL) || vercmp(version->s, localversion) > 0 ){
+					sync_pkg_push(sync, name->s, flags & (~SYNC_REINSTALL));
+				}
+				else{
+					continue;
+				}
+			}
+			
+			__free char** namedeps = MANY(char*, mem_header(depends->a)->len);
+			mforeach(depends->a, id){
+				namedeps[id] = depends->a[id].s;
+			}
+			mem_header(namedeps)->len = mem_header(depends->a)->len;
+			aur_sync(aur, pacman, sync, namedeps, PKGINFO_FLAG_DEPENDENCY | flags);
+			
+			__free char** makedeps = MANY(char*, mem_header(makedepends->a)->len);
+			mforeach(makedepends->a, id){
+				makedeps[id] = makedepends->a[id].s;
+			}
+			mem_header(makedeps)->len = mem_header(makedepends->a)->len;
+			aur_sync(aur, pacman, sync, makedeps, PKGINFO_FLAG_BUILD_DEPENDENCY | flags);
+		}
+	}
+	
+	if( !mem_header(sync->pkg)->len ){
+		die("up to date");
+	}
+	
+	unsigned totaldepsaur = 0;
+	mforeach(sync->pkg, i){
+		if( (sync->pkg->flags & PKGINFO_FLAG_DEPENDENCY) && !(sync->pkg->flags & DB_FLAG_UPSTREAM) ){
+			++totaldepsaur;
+		}
+	}
+	
+	if( totaldepsaur ){
+		puts("to proceed I will also have to install these dependencies coming from aur:");
+		fputs("    ", stdout);
+		mforeach(sync->pkg, i){
+			if( (sync->pkg->flags & PKGINFO_FLAG_DEPENDENCY) && !(sync->pkg->flags & DB_FLAG_UPSTREAM) ){
+				printf("%s ", sync->pkg[i].name);
+				if( !((i+1) % 8) ){
+					putchar('\n');
+					fputs("    ", stdout);
+				}
+			}
+		}
+		putchar('\n');
+		fputs("I proceed with the installation? ", stdout);
+		if( !readline_yesno() ) die("terminated at the user's discretion");
+	}
+	
+	mforeach(sync->pkg, i){
+		printf("[%s/%s] ", (sync->pkg[i].flags & DB_FLAG_UPSTREAM ? "upstream": "aur"),  sync->pkg[i].name);
+		if( sync->pkg[i].flags & PKGINFO_FLAG_DEPENDENCY ){
+			printf("(dependency)");
+		}
+		if( sync->pkg[i].flags & PKGINFO_FLAG_DEPENDENCY ){
+			printf("(make dependency)");
+		}
+		puts("");
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

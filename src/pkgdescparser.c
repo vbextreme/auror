@@ -122,6 +122,16 @@ char** desc_value_description(desc_s* desc){
 	return tag ? tag->value : desc->db->err;
 }
 
+char* desc_value_version(desc_s* desc){
+	descTag_s fitag = { .name = "VERSION" };
+	descTag_s* tag = rbtree_search(&desc->tags, &fitag);
+	if( !tag ){
+		fitag.name = "Version";
+		tag = rbtree_search(&desc->tags, &fitag);
+	}
+	return tag ? tag->value[0] : "";
+}
+
 __private int desc_desc_desc_name_cmp(const void* a, const void* b){
 	char* nameA = desc_value((void*)a, "NAME")[0];
 	if( !*nameA ) nameA = desc_value((void*)a, "Name")[0];
