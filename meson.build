@@ -10,7 +10,7 @@ type = 'executable'
 version = {
   'mmr': meson.project_version().split('.'),
   'str': meson.project_version(),
-  'dsc': 'auror'
+  'dsc': 'fail to change name to aurora'
 }
 
 if get_option('eveloper')
@@ -154,6 +154,7 @@ add_global_arguments('-DVERSION_REV="' + version['mmr'][2] + '"', language: 'c')
 libDeps  = [ cc.find_library('m', required : true) ] # math
 libDeps += [ dependency('libcurl', required: true) ]
 libDeps += [ dependency('zlib', required: true) ]
+libDeps += [ dependency('readline', required: true) ]
 
 #########################
 # software dependencies #

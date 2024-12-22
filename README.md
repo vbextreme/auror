@@ -20,6 +20,7 @@ Manual Build
 
 State:
 ======
+* v0.0.2 fail to change name to aurora
 * v0.0.1 aurora
 * v0.0.0 aurora
 * v0.0.0 custom time and fixed time, specific option for path, wrong indentation
