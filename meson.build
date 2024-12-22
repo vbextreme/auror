@@ -10,7 +10,7 @@ type = 'executable'
 version = {
   'mmr': meson.project_version().split('.'),
   'str': meson.project_version(),
-  'dsc': 'custom time and fixed time, specific option for path, wrong indentation'
+  'dsc': 'aurora'
 }
 
 if get_option('eveloper')
