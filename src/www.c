@@ -7,7 +7,7 @@
 #include <sys/wait.h>
 
 #define RESTAPI_IMPLEMENT
-#include <aurora/www.h>
+#include <auror/www.h>
 
 #define __wcc __cleanup(www_curl_cleanup)
 

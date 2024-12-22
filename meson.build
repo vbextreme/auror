@@ -1,7 +1,7 @@
 ###########
 # project #
 ###########
-project('aurora', 'c', version: '0.0.1')
+project('auror', 'c', version: '0.0.2')
 cc = meson.get_compiler('c')
 localPath = meson.current_source_dir()
 
@@ -10,7 +10,7 @@ type = 'executable'
 version = {
   'mmr': meson.project_version().split('.'),
   'str': meson.project_version(),
-  'dsc': 'aurora'
+  'dsc': 'auror'
 }
 
 if get_option('eveloper')
