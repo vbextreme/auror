@@ -2,10 +2,10 @@
 #include <notstd/str.h>
 #include <notstd/opt.h>
 
-#include <auror/auror.h>
-#include <auror/www.h>
-#include <auror/pacman.h>
-#include <auror/aur.h>
+#include <aurora/aurora.h>
+#include <aurora/www.h>
+#include <aurora/pacman.h>
+#include <aurora/aur.h>
 
 //TODO
 //	install
@@ -49,7 +49,7 @@ __private void print_matchs(fzs_s* matchs, const char* name, unsigned max){
 	}
 }
 
-#include <auror/inutility.h>
+#include <aurora/inutility.h>
 
 int main(int argc, char** argv){
 	notstd_begin();

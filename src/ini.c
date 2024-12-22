@@ -1,7 +1,7 @@
 #include <notstd/core.h>
 #include <notstd/str.h>
 
-#include <auror/ini.h>
+#include <aurora/ini.h>
 
 __private int ini_sec_str_cmp(const void* a, const void* b){
 	const iniSection_s* secB = b;

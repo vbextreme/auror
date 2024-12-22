@@ -1,7 +1,7 @@
 #include <notstd/core.h>
 #include <notstd/str.h>
 
-#include <auror/archive.h>
+#include <aurora/archive.h>
 
 #include <archive.h>
 #include <zlib.h>

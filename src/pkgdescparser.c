@@ -1,10 +1,10 @@
 #include <notstd/str.h>
 
-#include <auror/inutility.h>
-#include <auror/archive.h>
+#include <aurora/inutility.h>
+#include <aurora/archive.h>
 #include <unistd.h>
 #define PKGDESC_IMPLEMENT
-#include <auror/pkgdesc.h>
+#include <aurora/pkgdesc.h>
 
 typedef struct substring{
 	const char* str;

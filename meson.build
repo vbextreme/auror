@@ -1,7 +1,7 @@
 ###########
 # project #
 ###########
-project('auror', 'c', version: '0.0.0')
+project('aurora', 'c', version: '0.0.0')
 cc = meson.get_compiler('c')
 localPath = meson.current_source_dir()
 

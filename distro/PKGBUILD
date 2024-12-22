@@ -1,6 +1,6 @@
 # Maintainer: Vbextreme <@>
 # Contributor: Vbextreme <@>
-prj='auror'
+prj='aurora'
 pkgname=($prj)
 pkgdesc='only for developer until software is in first alpha'
 pkgver='0.0.0'

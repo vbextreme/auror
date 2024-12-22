@@ -1,9 +1,9 @@
 #include <notstd/str.h>
 
-#include <auror/inutility.h>
+#include <aurora/inutility.h>
 
 #define AUR_IMPLEMENT
-#include <auror/aur.h>
+#include <aurora/aur.h>
 
 aur_s* aur_ctor(aur_s* aur){
 	restapi_ctor(&aur->ra, "https://aur.archlinux.org/rpc/v5", 0);

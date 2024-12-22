@@ -4,8 +4,8 @@
 #include <notstd/core.h>
 #include <notstd/fzs.h>
 
-#include <auror/pkgdesc.h>
-#include <auror/ini.h>
+#include <aurora/pkgdesc.h>
+#include <aurora/ini.h>
 
 #define PACMAN_LOCAL_INSTALL "/var/lib/pacman/local"
 #define PACMAN_LOCAL_DB      "/var/lib/pacman/sync"

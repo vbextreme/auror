@@ -1,7 +1,7 @@
 #include <notstd/str.h>
 
-#include <auror/pacman.h>
-#include <auror/inutility.h>
+#include <aurora/pacman.h>
+#include <aurora/inutility.h>
 
 #include <dirent.h>
 

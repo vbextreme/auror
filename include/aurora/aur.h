@@ -5,9 +5,9 @@
 #include <notstd/json.h>
 #include <notstd/fzs.h>
 
-#include <auror/www.h>
-#include <auror/pkgdesc.h>
-#include <auror/pacman.h>
+#include <aurora/www.h>
+#include <aurora/pkgdesc.h>
+#include <aurora/pacman.h>
 
 #define AUR_DB_NAME "aur"
 #define AUR_URL     "https://aur.archlinux.org"
@@ -40,7 +40,7 @@ ddatabase_s* aur_search(aur_s* aur, const char* name, fzs_s** matchs);
 
 ddatabase_s* aur_search_test(jvalue_s* jret, const char* name, fzs_s** matchs);
 
-//aur dir cache : ~/.cache/auror
+//aur dir cache : ~/.cache/aurora
 //aur download 
 //
 
