@@ -4,6 +4,7 @@
 #include <notstd/core.h>
 #include <notstd/json.h>
 #include <notstd/fzs.h>
+#include <notstd/list.h>
 
 #include <auror/www.h>
 #include <auror/pkgdesc.h>
@@ -22,8 +23,11 @@
 #define SYNC_REINSTALL                0x10000000
 
 typedef struct pkgInfo{
-	char*    name;
-	unsigned flags;
+	inherit_ld(struct pkgInfo);
+	struct pkgInfo* parent;
+	struct pkgInfo* deps;
+	char*           name;
+	unsigned        flags;
 }pkgInfo_s;
 
 typedef struct aurSync{
@@ -39,7 +43,7 @@ aur_s* aur_dtor(aur_s* aur);
 ddatabase_s* aur_search(aur_s* aur, const char* name, fzs_s** matchs);
 ddatabase_s* aur_search_test(jvalue_s* jret, const char* name, fzs_s** matchs);
 
-void aur_dependency_resolve(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsigned flags);
+void aur_dependency_resolve(aur_s* aur, pacman_s* pacman, aurSync_s* sync, pkgInfo_s* parent, char** name, unsigned flags);
 //aur dir cache : ~/.cache/auror
 //aur download 
 //

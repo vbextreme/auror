@@ -6,6 +6,7 @@
 #include <auror/www.h>
 #include <auror/pacman.h>
 #include <auror/aur.h>
+#include <auror/inutility.h>
 
 //TODO
 //	install
@@ -50,7 +51,62 @@ __private void print_matchs(fzs_s* matchs, const char* name, unsigned max){
 	}
 }
 
-#include <auror/inutility.h>
+__private void print_pkg_deps(pkgInfo_s* pkg, unsigned tab, unsigned w){
+	unsigned cw = tab * 2;
+	print_repeats(tab, "  ");
+
+	ldforeach(pkg, it){
+		unsigned nw = snprintf(NULL, 0,
+			"[%s/%s]%s",
+			(it->flags & DB_FLAG_UPSTREAM ? "upstream": "aur"),
+			it->name,
+			(it->deps ? ":": "  ")
+		);
+		if( nw + cw > w ){
+			putchar('\n');
+			cw = tab * 2;
+			print_repeats(tab, "  ");
+		}
+		printf("[%s/%s]%s",
+			(it->flags & DB_FLAG_UPSTREAM ? "upstream": "aur"),
+			it->name,
+			(it->deps ? ":": "  ")
+		);
+		if( it->deps ){
+			putchar('\n');
+			print_pkg_deps(it->deps, tab+1, w);
+			cw = tab * 2;
+			print_repeats(tab, "  ");
+		}
+	}
+	putchar('\n');
+}
+
+__private void print_packages(aurSync_s* async){
+	if( !async->pkg ) return;
+	unsigned w;
+	term_wh(&w, NULL);
+	print_pkg_deps(async->pkg, 0, w);
+}
+
+__private char* pacman_deps_list(char* cmd, pkgInfo_s* pkg, unsigned* count){
+	ldforeach(pkg, it){
+		if( it->flags & PKGINFO_FLAG_BUILD_DEPENDENCY ) continue;
+		if( it->flags & DB_FLAG_UPSTREAM ){
+			unsigned len = strlen(it->name);
+			cmd = mem_upsize(cmd, len+2);
+			cmd[mem_header(cmd)->len++] = ' ';
+			memcpy(&cmd[mem_header(cmd)->len], it->name, len);
+			mem_header(cmd)->len += len;
+			cmd[mem_header(cmd)->len] = 0;;
+			++(*count);
+		}
+		if( it->deps ){
+			cmd = pacman_deps_list(cmd, it->deps, count);
+		}
+	}
+	return cmd;
+}
 
 int main(int argc, char** argv){
 	notstd_begin();
@@ -94,15 +150,26 @@ int main(int argc, char** argv){
 	
 	if( opt[O_i].set ){
 		aurSync_s async;
-		async.pkg = MANY(pkgInfo_s, 4);
-		char** pkgs = MANY(char*, opt[O_i].set);
+		async.pkg = NULL;
+		//async.pkg = MANY(pkgInfo_s, 4);
+		char** pkgs = MANY(char*, opt[O_i].set + 1);
 		for( unsigned i = 0; i < opt[O_i].set; ++i ){
 			pkgs[i] = (char*)opt[O_i].value[i].str;
 		}
 		mem_header(pkgs)->len = opt[O_i].set;
-		aur_dependency_resolve(&aur, &pacman, &async, pkgs, 0);
+		aur_dependency_resolve(&aur, &pacman, &async, NULL, pkgs, 0);
+		print_packages(&async);
+		
+		fputs("Proceed with the installation? ", stdout);
+		if( !readline_yesno() ) die("terminated at the user's discretion");
 		
 		//install pacman deps
+		unsigned pacgnamcount = 0;
+		__free char* pacgnam = pacman_deps_list(str_dup(PACMNA_INSTALL_DEPS, 0), async.pkg, &pacgnamcount);
+		if( pacgnamcount ) 
+			dbg_info("%s", pacgnam);
+			//shell("pacman deps resolve", pacgnam);
+		
 		//create sandbox
 		//install build deps
 		//makepkg
@@ -110,18 +177,6 @@ int main(int argc, char** argv){
 		//extract pkg
 		//~persistent delete sandbox
 		//install pkg with pacman
-
-		mforeach(async.pkg, i){
-			printf("[%s/%s] ", (async.pkg[i].flags & DB_FLAG_UPSTREAM ? "upstream": "aur"),  async.pkg[i].name);
-			if( async.pkg[i].flags & PKGINFO_FLAG_DEPENDENCY ){
-				printf("(dependency)");
-			}
-			if( async.pkg[i].flags & PKGINFO_FLAG_DEPENDENCY ){
-				printf("(make dependency)");
-			}
-			puts("");
-		}
-	
 	}
 	
 	if( opt[O_s].set ){

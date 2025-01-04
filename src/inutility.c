@@ -1,6 +1,7 @@
 #include <notstd/core.h>
 #include <notstd/str.h>
 
+#include <sys/ioctl.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
@@ -126,6 +127,13 @@ void bold_set(void){
 	fputs("\033[1m", stdout);
 }
 
+void term_wh(unsigned* w, unsigned* h){
+	struct winsize ws;
+    ioctl(0, TIOCGWINSZ, &ws);
+	if( w ) *w = ws.ws_col;
+	if( h ) *h = ws.ws_row;
+}
+
 void print_repeats(unsigned count, const char* ch){
 	if( !count ) return;
 	while( count --> 0 ) fputs(ch, stdout);
@@ -134,6 +142,13 @@ void print_repeats(unsigned count, const char* ch){
 void print_repeat(unsigned count, const char ch){
 	if( !count ) return;
 	while( count --> 0 ) fputc(ch, stdout);
+}
+
+void shell(const char* errprompt, const char* exec){
+	puts(exec);
+	int ex = system(exec);
+	if( ex == -1 ) die("%s: %m", errprompt);
+	if( !WIFEXITED(ex) || WEXITSTATUS(ex) != 0) die("%s: %d %d", errprompt, WIFEXITED(ex), WEXITSTATUS(ex));
 }
 
 __private int isyesno(const char* in, int noyes){

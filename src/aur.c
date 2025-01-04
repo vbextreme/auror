@@ -5,6 +5,14 @@
 #define AUR_IMPLEMENT
 #include <auror/aur.h>
 
+//TODO
+//	risolvere Conflicts
+//		Provide
+//		Replaces
+//
+//	URL
+
+
 aur_s* aur_ctor(aur_s* aur){
 	restapi_ctor(&aur->ra, "https://aur.archlinux.org/rpc/v5", 0);
 	return aur;
@@ -125,32 +133,119 @@ ddatabase_s* aur_search_test(jvalue_s* jret, const char* name, fzs_s** matchs){
 	return db;
 }
 
-__private void sync_pkg_push(aurSync_s* sync, char* name, unsigned flags){
-	mforeach(sync->pkg, i){
-		if( !strcmp(sync->pkg[i].name, name) ) return;
+__private pkgInfo_s* pkginfo_rec_find(pkgInfo_s* p, const char* name){
+	if( !strcmp(p->name, name) ) return p;
+	pkgInfo_s* ret = NULL;
+	ldforeach(p->deps, it){
+		if( (ret=pkginfo_rec_find(it, name)) ) return ret;
 	}
-	pkgInfo_s* ref;
-	sync->pkg = mem_upsize(sync->pkg, 1);
-	ref = &sync->pkg[mem_header(sync->pkg)->len++];
-	ref->name  = mem_borrowed(name);
-	ref->flags = flags;
+	return NULL;
 }
 
-void aur_dependency_resolve(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char** name, unsigned flags){
+__private pkgInfo_s* pkginfo_find(aurSync_s* sync, const char* name){
+	pkgInfo_s* ret = NULL;
+	ldforeach(sync->pkg, it){
+		if( (ret=pkginfo_rec_find(it, name)) ) return ret;
+	}
+	return NULL;
+}
+
+__private void sync_move_dependency(pkgInfo_s* newparent, pkgInfo_s* pkg){
+	if( pkg->parent ){
+		if( pkg->parent->deps == pkg ){
+			if( pkg->parent->deps->next == pkg ){
+				pkg->parent->deps = NULL;
+			}
+			else{
+				pkg->parent->deps = pkg->parent->deps->next;
+			}
+		}
+	}
+	ld_extract(pkg);
+	pkg->parent = newparent;
+	if( newparent->deps ){
+		ld_before(newparent->deps, pkg);
+	}
+	else{
+		newparent->deps = pkg;
+	}
+}
+
+__private pkgInfo_s* sync_pkg_push(aurSync_s* sync, pkgInfo_s* parent, char* name, unsigned flags){
+	dbg_info("new %s", name);
+	pkgInfo_s* f = pkginfo_find(sync, name);
+	if( f ){
+		if( parent && !f->parent ){
+			f->flags |= PKGINFO_FLAG_DEPENDENCY;
+			dbg_info("  pkg %s is already present, move to %s->deps", name, f->name);
+			sync_move_dependency(parent, f);
+		}
+		dbg_info("  already exists");
+		return f;
+	}
+
+	pkgInfo_s* p = NEW(pkgInfo_s);
+	ld_ctor(p);
+	p->deps   = NULL;
+	p->name   =  mem_borrowed(name);
+	p->flags  = flags;
+	p->parent = parent;
+	if( parent ){
+		if( !parent->deps ){
+			dbg_info("  first parent deps %s", p->name);
+			parent->deps = p;
+		}
+		else{
+			dbg_info("  add parent deps %s", p->name);
+			ld_before(parent->deps, p);
+			//dbg_info("[-1]%s [0]%s [1]%s [2]%s", parent->deps->prev->name, parent->deps->name, parent->deps->next->name, parent->deps->next->next->name);
+		}
+	}
+	else if( !sync->pkg ){
+		dbg_info("  first package");
+		sync->pkg = p;
+	}
+	else{
+		dbg_info("  add package");
+		ld_before(sync->pkg, p);
+	}
+	return p;
+}
+
+__private void unroll_dependency(aur_s* aur, pacman_s* pacman, aurSync_s* async, pkgInfo_s* parent, jvalue_s* jv, unsigned flags, int optional){
+	if( jv->type != JV_ARRAY ) return;
+	const unsigned count = mem_header(jv->a)->len;
+	__free char** namedeps = MANY(char*, count + 1);
+	unsigned add = 0;
+	for( unsigned i = 0; i < count; ++i ){
+		if( optional ){
+			printf("package '%s' have optional dependency '%s', you want install? ", parent->name, jv->a[i].s);
+			if( !readline_yesno() ) continue;
+		}
+		dbg_info("recursive resolve dependency %s", jv->a[i].s);
+		namedeps[add++] = jv->a[i].s;
+	}
+	if( add ){
+		mem_header(namedeps)->len = add;
+		aur_dependency_resolve(aur, pacman, async, parent, namedeps, flags);
+	}
+}
+
+void aur_dependency_resolve(aur_s* aur, pacman_s* pacman, aurSync_s* sync, pkgInfo_s* parent, char** name, unsigned flags){
 	__free char** aurreq = MANY(char*, 4);
 	mforeach(name, i){
 		desc_s* localpkg = pacman_pkg_search(pacman, name[i]);
 		if( localpkg && (localpkg->db->flags & DB_FLAG_UPSTREAM) ){
 			if( !(localpkg->flags & PKG_FLAG_INSTALL) ){
 				dbg_info("install '%s' with pacman", name[i]);
-				sync_pkg_push(sync, name[i], DB_FLAG_UPSTREAM);
+				sync_pkg_push(sync, parent, name[i], flags | DB_FLAG_UPSTREAM);
 			}
 		}
 		else{
 			dbg_info("add aur request '%s'", name[i]);
 			if( flags & (PKGINFO_FLAG_DEPENDENCY | PKGINFO_FLAG_BUILD_DEPENDENCY) ){
-				printf("aur package require dependency %s coming from aur\n", name[i]);
-				fputs("I proceed with the installation?\n", stdout);
+				printf("aur package require %sdependency %s coming from aur\n", (flags & PKGINFO_FLAG_BUILD_DEPENDENCY ? "make": ""), name[i]);
+				fputs("I proceed with the installation? ", stdout);
 				if( !readline_yesno() ) die("terminated at the user's discretion");
 			}
 			aurreq = mem_upsize(aurreq, 1);
@@ -165,82 +260,38 @@ void aur_dependency_resolve(aur_s* aur, pacman_s* pacman, aurSync_s* sync, char*
 		
 		jvalue_s* results = jvalue_property_type(req, JV_ARRAY, "results");
 		mforeach(results->a, ia){
-			jvalue_s* depends =  jvalue_property_type(&results->a[ia], JV_ARRAY, "Depends");
-			jvalue_s* makedepends =  jvalue_property_type(&results->a[ia], JV_ARRAY, "MakeDepends");
-			jvalue_s* name =  jvalue_property_type(&results->a[ia], JV_STRING, "Name");
-			jvalue_s* version = jvalue_property_type(&results->a[ia], JV_STRING, "Version");
-		
+			jvalue_s* depends     = jvalue_property_type(&results->a[ia], JV_ARRAY , "Depends");
+			jvalue_s* makedepends = jvalue_property_type(&results->a[ia], JV_ARRAY , "MakeDepends");
+			jvalue_s* optdepends  = jvalue_property_type(&results->a[ia], JV_ARRAY , "OptDepends");
+			jvalue_s* name        = jvalue_property_type(&results->a[ia], JV_STRING, "Name");
+			jvalue_s* version     = jvalue_property_type(&results->a[ia], JV_STRING, "Version");
+				
 			desc_s* localpkg = pacman_pkg_search(pacman, name->s);
+			pkgInfo_s* newp = NULL;
+
 			if( !localpkg ){
 				dbg_info("install '%s' with aur", name->s);
-				sync_pkg_push(sync, name->s, flags & (~SYNC_REINSTALL));
+				newp = sync_pkg_push(sync, parent, name->s, flags);
 			}
 			else{
 				char* localversion = desc_value_version(localpkg);
 				if( (flags & SYNC_REINSTALL) || vercmp(version->s, localversion) > 0 ){
 					dbg_info("upgrade '%s' with aur", name->s);
-					sync_pkg_push(sync, name->s, flags & (~SYNC_REINSTALL));
+					newp = sync_pkg_push(sync, parent, name->s, flags);
 				}
 				else{
 					continue;
 				}
 			}
 			
-			if( mem_header(depends->a)->len ){
-				__free char** namedeps = MANY(char*, mem_header(depends->a)->len);
-				mforeach(depends->a, id){
-					dbg_info("recursive resolve dependency %s", depends->a[id].s);
-					namedeps[id] = depends->a[id].s;
-				}
-				mem_header(namedeps)->len = mem_header(depends->a)->len;
-				aur_dependency_resolve(aur, pacman, sync, namedeps, PKGINFO_FLAG_DEPENDENCY | flags);
-			}
-			
-			if( mem_header(makedepends->a)->len ){
-				__free char** makedeps = MANY(char*, mem_header(makedepends->a)->len);
-				mforeach(makedepends->a, id){
-					dbg_info("recursive resolve makedependency %s", makedepends->a[id].s);
-					makedeps[id] = makedepends->a[id].s;
-				}
-				mem_header(makedeps)->len = mem_header(makedepends->a)->len;
-				aur_dependency_resolve(aur, pacman, sync, makedeps, PKGINFO_FLAG_BUILD_DEPENDENCY | flags);
-			}
+			unroll_dependency(aur, pacman, sync, newp, depends, PKGINFO_FLAG_DEPENDENCY | flags, 0);
+			unroll_dependency(aur, pacman, sync, newp, optdepends, PKGINFO_FLAG_DEPENDENCY | flags, 1);
+			unroll_dependency(aur, pacman, sync, newp, makedepends, PKGINFO_FLAG_BUILD_DEPENDENCY | flags, 0);
 		}
 	}
 	
-	if( !mem_header(sync->pkg)->len ){
-		die("up to date");
-	}
-
-/*	
-	unsigned totaldepsaur = 0;
-	mforeach(sync->pkg, i){
-		if( (sync->pkg->flags & PKGINFO_FLAG_DEPENDENCY) && !(sync->pkg->flags & DB_FLAG_UPSTREAM) ){
-			++totaldepsaur;
-		}
-	}
-	
-	if( totaldepsaur ){
-		puts("to proceed I will also have to install these dependencies coming from aur:");
-		fputs("    ", stdout);
-		mforeach(sync->pkg, i){
-			if( (sync->pkg->flags & PKGINFO_FLAG_DEPENDENCY) && !(sync->pkg->flags & DB_FLAG_UPSTREAM) ){
-				printf("%s ", sync->pkg[i].name);
-				if( !((i+1) % 8) ){
-					putchar('\n');
-					fputs("    ", stdout);
-				}
-			}
-		}
-		putchar('\n');
-		fputs("I proceed with the installation? ", stdout);
-		if( !readline_yesno() ) die("terminated at the user's discretion");
-	}	
-*/
+	if( !sync->pkg ) die("up to date");
 }
-
-
-
 
 
 

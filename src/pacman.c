@@ -124,10 +124,7 @@ void pacman_ctor(pacman_s* pacman){
 }
 
 void pacman_upgrade(void){
-	puts(PACMAN_UPGRADE);
-	int ex = system(PACMAN_UPGRADE);
-	if( ex == -1 ) die("pacman unable upgrade: %m");
-	if( !WIFEXITED(ex) || WEXITSTATUS(ex) != 0) die("pacman exit with error: %d %d", WIFEXITED(ex), WEXITSTATUS(ex));
+	shell("pacman", PACMAN_UPGRADE);
 }
 
 void pacman_search(pacman_s* pacman, const char* name, fzs_s** matchs){

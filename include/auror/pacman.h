@@ -20,6 +20,7 @@
 
 
 #define PACMAN_UPGRADE       "sudo pacman -Syu"
+#define PACMNA_INSTALL_DEPS  "sudo pacman -Syu --needed"
 
 typedef struct pacman{
 	ddatabase_s** db;
