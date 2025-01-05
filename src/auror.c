@@ -24,6 +24,8 @@
 //		install
 //
 
+__private char* CACHE_DIR = NULL;
+
 option_s OPT[] = {
 	{'u', "upgrade"       , "upgrade upstream and aur",    OPT_NOARG, 0, 0},
 	{'s', "search"        , "search in upstream and aur",  OPT_STR, 0, 0},
@@ -120,9 +122,27 @@ __private char** aur_deps_list(char** deps, pkgInfo_s* pkg){
 	return deps;
 }
 
+__private void aur_git(const char* pkgname){
+	__free char* pkgdst = str_printf("%s/%s/%s", CACHE_DIR, AUROR_CACHE_PKGBUILD, pkgname);
+	if( dir_exists(pkgdst) ){
+		dbg_info("pull: '%s'", pkgdst);
+		if( !tig_pull(NULL, pkgdst, "origin", NULL, NULL) ) return;
+		dbg_error("fail pull, try delete and clone %s: %s", pkgdst, tig_strerror());
+		rm(pkgdst);
+	}
+	
+	__free char* url = str_printf(AUR_URL "/%s.git", pkgname);
+	mk_dir(pkgdst, 0770);
+	dbg_info("clone: '%s' -> '%s'", url, pkgdst);
+	if( tig_clone(url, pkgdst, NULL, NULL) ) die("unable to get aur/%s/PKGBUILD", pkgname);
+}
+
 int main(int argc, char** argv){
 	notstd_begin();
 	www_begin();
+	tig_begin();
+
+	CACHE_DIR = path_explode(AUROR_CACHE_DIR);
 	
 	__argv option_s* opt = argv_parse(OPT, argc, argv);
 	if( opt[O_h].set ) argv_usage(opt, argv[0]);
@@ -182,11 +202,15 @@ int main(int argc, char** argv){
 			dbg_info("%s", pacgnam);
 			//shell("pacman deps resolve", pacgnam);
 		}
-		
+	
 		__free char** aurgnam = aur_deps_list(MANY(char*, 4), async.pkg);
+		const char* prompt = "Downloading PKGBUILD";
+		progress_begin(prompt, mem_header(aurgnam)->len);
 		mforeach(aurgnam, i){
-			dbg_info("downloading: '%s'", aurgnam[i]); 
+			aur_git(aurgnam[i]);
+			progress(prompt, 1);
 		}
+		progress_end(prompt);
 
 		//create sandbox
 		//install build deps
@@ -205,6 +229,7 @@ int main(int argc, char** argv){
 		print_matchs(matchs, opt[O_s].value->str, opt[O_n].value->ui);
 	}
 
+	tig_end();
 	www_end();
 	return 0;
 }

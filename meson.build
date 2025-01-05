@@ -1,7 +1,7 @@
 ###########
 # project #
 ###########
-project('auror', 'c', version: '0.0.5')
+project('auror', 'c', version: '0.0.6')
 cc = meson.get_compiler('c')
 localPath = meson.current_source_dir()
 
@@ -10,7 +10,7 @@ type = 'executable'
 version = {
   'mmr': meson.project_version().split('.'),
   'str': meson.project_version(),
-  'dsc': 'ready to execute hestia'
+  'dsc': 'downloading PKGBUILD'
 }
 
 if get_option('eveloper')

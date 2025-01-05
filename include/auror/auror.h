@@ -9,8 +9,8 @@ typedef enum{
 	O_h
 }OPT_E;
 
-#define AUROR_CACHE_DIR "~/.cache/auror"
-
+#define AUROR_CACHE_DIR      "~/.cache/auror"
+#define AUROR_CACHE_PKGBUILD "aur"
 
 
 

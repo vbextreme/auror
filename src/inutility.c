@@ -2,11 +2,13 @@
 #include <notstd/str.h>
 
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
 #include <pwd.h>
 #include <limits.h>
+#include <dirent.h>
 #include <readline/readline.h>
 
 char* load_file(const char* fname, int exists){
@@ -26,6 +28,13 @@ char* load_file(const char* fname, int exists){
 	if( nr < 0 ) die("unable to read file: %s, error: %m", fname);
 	buf = mem_fit(buf);
 	return buf;
+}
+
+int dir_exists(const char* path){
+	DIR* d = opendir(path);
+	if( !d ) return 0;
+	closedir(d);
+	return 1;
 }
 
 int vercmp(const char *a, const char *b){
@@ -103,6 +112,43 @@ char* path_explode(const char* path){
 		return str_printf("%s%s", bk, &path[2]);
 	}
 	return str_dup(path, 0);
+}
+
+void mk_dir(const char* path, unsigned privilege){
+	unsigned len = 0;
+	unsigned next = 0;
+	const char* d;
+	__free char* mkpath = MANY(char, strlen(path) + 2);
+	unsigned l = 0;
+	mkpath[0] = 0;
+
+	while( *(d=str_tok(path, "/", 0, &len, &next)) ){
+		memcpy(&mkpath[l], d, len);
+		l += len;
+		mkpath[l++] = '/';
+		mkpath[l] = 0;
+		if( !dir_exists(mkpath) ) mkdir(mkpath, privilege);
+	}
+}
+
+void rm(const char* path){
+	DIR* d = opendir(path);
+	if( !d ) return;
+
+	struct dirent* ent;
+	while( (ent=readdir(d)) ){
+		if( !strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..") ) continue;
+		char* fpath = str_printf("%s/%s", path, ent->d_name);
+		if( ent->d_type == DT_DIR ){
+			rm(fpath);
+		}
+		else{
+			unlink(fpath);
+		}
+		mem_free(fpath);
+	}
+	closedir(d);
+	rmdir(path);
 }
 
 void colorfg_set(unsigned color){
@@ -185,11 +231,25 @@ int readline_yesno(void){
 	return ret;
 }
 
+__private __atomic unsigned long PROG_I;
+__private __atomic unsigned long PROG_T;
 
+void progress_begin(const char* prompt, unsigned long max){
+	PROG_T = max;
+	PROG_I = 0;
+	fflush(stdout);
+	dprintf(STDOUT_FILENO, "[%3u%%] %s", 0, prompt);
+}
 
+void progress(const char* prompt, unsigned long inc){
+	PROG_I += inc;
+	if( PROG_I > PROG_T ) PROG_I = PROG_T;
+	dprintf(STDOUT_FILENO, "\r[%3lu%%] %s", PROG_I * 100 / PROG_T, prompt);
+}
 
-
-
+void progress_end(const char* prompt){
+	dprintf(STDOUT_FILENO, "\r[%3u%%] %s\n", 100, prompt);
+}
 
 
 
