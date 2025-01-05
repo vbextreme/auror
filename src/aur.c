@@ -244,7 +244,7 @@ void aur_dependency_resolve(aur_s* aur, pacman_s* pacman, aurSync_s* sync, pkgIn
 		else{
 			dbg_info("add aur request '%s'", name[i]);
 			if( flags & (PKGINFO_FLAG_DEPENDENCY | PKGINFO_FLAG_BUILD_DEPENDENCY) ){
-				printf("aur package require %sdependency %s coming from aur\n", (flags & PKGINFO_FLAG_BUILD_DEPENDENCY ? "make": ""), name[i]);
+				printf("aur/%s required %sdependency aur/%s\n", (parent ? parent->name: ""),(flags & PKGINFO_FLAG_BUILD_DEPENDENCY ? "make": ""), name[i]);
 				fputs("I proceed with the installation? ", stdout);
 				if( !readline_yesno() ) die("terminated at the user's discretion");
 			}

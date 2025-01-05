@@ -20,6 +20,7 @@ Manual Build
 
 State:
 ======
+* v0.0.1 ready to execute hestia
 * v0.0.3 resolve dependency
 * v0.0.3 resolve dependency
 * v0.0.2 fail to change name to aurora

@@ -166,8 +166,9 @@ int main(int argc, char** argv){
 		//install pacman deps
 		unsigned pacgnamcount = 0;
 		__free char* pacgnam = pacman_deps_list(str_dup(PACMNA_INSTALL_DEPS, 0), async.pkg, &pacgnamcount);
-		if( pacgnamcount ) 
+		if( pacgnamcount ){
 			dbg_info("%s", pacgnam);
+		}
 			//shell("pacman deps resolve", pacgnam);
 		
 		//create sandbox
