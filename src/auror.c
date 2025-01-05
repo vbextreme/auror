@@ -1,6 +1,7 @@
 #include <notstd/core.h>
 #include <notstd/str.h>
 #include <notstd/opt.h>
+#include <notstd/tig.h>
 
 #include <auror/auror.h>
 #include <auror/www.h>
@@ -108,6 +109,17 @@ __private char* pacman_deps_list(char* cmd, pkgInfo_s* pkg, unsigned* count){
 	return cmd;
 }
 
+__private char** aur_deps_list(char** deps, pkgInfo_s* pkg){
+	ldforeach(pkg, it){
+		if( it->flags & PKGINFO_FLAG_BUILD_DEPENDENCY ) continue;
+		if( it->flags & DB_FLAG_UPSTREAM ) continue;
+		deps = mem_upsize(deps, 1);
+		deps[mem_header(deps)->len++] = it->name;
+		if( it->deps ) deps = aur_deps_list(deps, it->deps);
+	}
+	return deps;
+}
+
 int main(int argc, char** argv){
 	notstd_begin();
 	www_begin();
@@ -164,13 +176,18 @@ int main(int argc, char** argv){
 		if( !readline_yesno() ) die("terminated at the user's discretion");
 		
 		//install pacman deps
-		unsigned pacgnamcount = 0;
-		__free char* pacgnam = pacman_deps_list(str_dup(PACMNA_INSTALL_DEPS, 0), async.pkg, &pacgnamcount);
-		if( pacgnamcount ){
+		unsigned tcount = 0;
+		__free char* pacgnam = pacman_deps_list(str_dup(PACMNA_INSTALL_DEPS, 0), async.pkg, &tcount);
+		if( tcount ){
 			dbg_info("%s", pacgnam);
-		}
 			//shell("pacman deps resolve", pacgnam);
+		}
 		
+		__free char** aurgnam = aur_deps_list(MANY(char*, 4), async.pkg);
+		mforeach(aurgnam, i){
+			dbg_info("downloading: '%s'", aurgnam[i]); 
+		}
+
 		//create sandbox
 		//install build deps
 		//makepkg

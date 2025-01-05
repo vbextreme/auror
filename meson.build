@@ -54,6 +54,7 @@ src += [ 'notstd/json.c' ]
 src += [ 'notstd/rbtree.c' ]
 src += [ 'notstd/utf8.c' ]
 src += [ 'notstd/fzs.c' ]
+src += [ 'notstd/tig.c' ]
 
 src += [ 'src/www.c' ]
 src += [ 'src/archive.c' ]
@@ -155,6 +156,7 @@ libDeps  = [ cc.find_library('m', required : true) ] # math
 libDeps += [ dependency('libcurl', required: true) ]
 libDeps += [ dependency('zlib', required: true) ]
 libDeps += [ dependency('readline', required: true) ]
+libDeps += [ dependency('libgit2', required: true) ]
 
 #########################
 # software dependencies #
