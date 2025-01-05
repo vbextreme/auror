@@ -1,4 +1,4 @@
-auror v0.0.4
+auror v0.0.5
 =============
 Introduction:
 =============
@@ -20,6 +20,7 @@ Manual Build
 
 State:
 ======
+* v0.0.5 ready to execute hestia
 * v0.0.4 ready to execute hestia
 * v0.0.4 ready to execute hestia
 * v0.0.4 ready to execute hestia
