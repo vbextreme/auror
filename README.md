@@ -1,4 +1,4 @@
-auror v0.0.6
+auror v0.0.7
 =============
 Introduction:
 =============
@@ -20,6 +20,7 @@ Manual Build
 
 State:
 ======
+* v0.0.7 select input, hightlight pkgbuild
 * v0.0.6 downloading PKGBUILD
 * v0.0.5 ready to execute hestia
 * v0.0.4 ready to execute hestia

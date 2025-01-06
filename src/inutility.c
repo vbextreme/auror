@@ -11,6 +11,9 @@
 #include <dirent.h>
 #include <readline/readline.h>
 
+#include <tree_sitter/api.h>
+#include <tree_sitter/tree-sitter-bash.h>
+
 char* load_file(const char* fname, int exists){
 	dbg_info("loading %s", fname);
 	int fd = open(fname, O_RDONLY);
@@ -231,8 +234,103 @@ int readline_yesno(void){
 	return ret;
 }
 
-__private __atomic unsigned long PROG_I;
-__private __atomic unsigned long PROG_T;
+__private int idnumber(const char** p){
+	errno = 0;
+	char* end = NULL;
+	int ret = strtol(*p, &end, 10);
+	if( errno || !end || end == *p ) return -1;
+	*p = end;
+	return ret;
+}
+
+__private int idname(char** list, const char* n, unsigned len){
+	if( len == 1 && *n == '*' ) return INT_MIN;
+	mforeach(list, i){
+		unsigned ln = strlen(list[i]);
+		if( ln == len && !strncmp(list[i], n, len) ) return i;
+	}
+	return -1;
+}
+
+__private char** idadd(char** sel, char* name){
+	mforeach(sel, i){
+		if( !strcmp(sel[i],name) ) return sel;
+	}
+	sel = mem_upsize(sel, 1);
+	sel[mem_header(sel)->len++] = name;
+	return sel;
+}
+
+__private char** idselection(const char* p, char** list){
+	unsigned const count = mem_header(list)->len;
+	char** sel = MANY(char*, count);
+	if( !p ) return sel;
+	p = str_skip_h(p);
+	if( !*p ) return sel;
+	do{
+		const char* stp = p;
+		int id = idnumber(&p);
+		if( id == -1 ){
+			const char* end = p;
+			while( *end && *end != ' ' && *end != ',' && *end != '\t' ) ++end;
+			id = idname(list, p, end-p);
+			p = end;
+		}
+		if( id == INT_MIN ){
+			for( unsigned i = 0; i < count; ++i ){
+				sel[i] = list[i];
+			}
+			mem_header(sel)->len = count;
+			break;
+		}
+		else if( id < 0 || id >= (int)count ){
+			mem_free(sel);
+			printf("invalid selection: %.*s\n", (int)(p-stp), stp);
+			return NULL;
+		}
+		else{
+			sel = idadd(sel, list[id]);
+		}
+		
+		p = str_skip_h(p);
+		if( *p && *p != ',' ){
+			printf("invalid token '%c' aspected , at this point\n", *p );
+			mem_free(sel);
+			return NULL;
+		}
+		p = str_skip_h(p+1);
+	}while( *p );
+	return sel;
+}
+
+char** readline_listid(const char* prompt, char** list){
+	unsigned w;
+	term_wh(&w, NULL);
+	unsigned cw = 0;
+	mforeach(list, i){
+		unsigned nw = snprintf(NULL, 0, "[%u]%s  ", i, list[i]);
+		if( nw + cw > w ){
+			cw = 0;
+			putchar('\n');
+		}
+		printf("[%u]%s  ", i, list[i]);
+		cw += nw;
+	}
+	putchar('\n');
+	putchar('\n');
+	char** sel = NULL;
+	puts(prompt);
+	do{
+		puts("(Default nothing; 0,1,2,3; name,name,...; * all)");
+		char* in = readline("> ");
+		sel = idselection(in, list);
+		free(in);
+	}while(!sel);
+	return sel;
+}
+
+__private __atomic volatile unsigned long PROG_I;
+__private __atomic volatile unsigned long PROG_T;
 
 void progress_begin(const char* prompt, unsigned long max){
 	PROG_T = max;
@@ -257,5 +355,198 @@ void progress_end(const char* prompt){
 
 
 
+typedef struct highlight{
+	unsigned fg;
+	unsigned bg;
+	unsigned bold;
+	unsigned sep;
+}highlight_s;
 
+typedef struct revAstHighlight{
+	const char* type;
+	struct revAstHighlight* child;
+	highlight_s* hi;
+}revAstHighlight_s;
+/*
+__private highlight_s* hi_new(unsigned fg, unsigned bg, unsigned bold, unsigned sep){
+	highlight_s* hi = NEW(highlight_s);
+	hi->fg   = fg;
+	hi->bg   = bg;
+	hi->bold = bold;
+	hi->sep  = sep;
+	return hi;
+}
+
+__private revAstHighlight_s* rah_new(revAstHighlight_s* parent, const char* type, highlight_s* hi){
+	mforeach(parent->child, i){
+		if( !strcmp(parent->child[i].type, type) ){
+			if( hi && !parent->child[i].hi ) parent->child[i].hi = mem_borrowed(hi);
+			return &parent->child[i];
+		}
+	}
+	parent->child = mem_upsize(parent->child, 1);
+	revAstHighlight_s* rah = &parent->child[mem_header(parent->child)->len++];
+	rah->hi    = mem_borrowed(hi);
+	rah->type  = type;
+	rah->child = MANY(revAstHighlight_s, 1);
+	return rah;
+}
+*/
+__private revAstHighlight_s* bash_highlight(void){
+	__private highlight_s hcomment  = { 14, 0, 0, 0};
+	__private highlight_s hfunction = {  7, 0, 0, 0};
+	__private highlight_s hvardec   = { 14, 0, 1, 0};
+	__private highlight_s hvar      = { 23, 0, 1, 0};
+	__private highlight_s hcommand  = { 11, 0, 0, 0};
+	__private highlight_s harg      = {255, 0, 0, 0};
+	__private highlight_s hstring   = { 13, 0, 0, 0};
+	__private highlight_s hassign   = {255, 0, 0, 0};
+	
+	__private revAstHighlight_s bashAny[] = {
+		{ "function_definition" , NULL, &hfunction},
+		{ "compound_statement"  , NULL, &hfunction},
+		{ "simple_expansion"    , NULL, &hvar     },
+		{ "expansion"           , NULL, &hvar     },
+		{ "command_substitution", NULL, &hvar     },
+		{ "pipeline"            , NULL, &hcommand },
+		{ "if_statement"        , NULL, &hcommand },
+		{ "for_statement"       , NULL, &hcommand },
+		{ "while_statement"     , NULL, &hcommand },
+		{ "do_group"            , NULL, &hcommand },
+		{ "test_command"        , NULL, &hcommand },
+		{ "binary_expression"   , NULL, &hcommand },
+		{ "file_redirect"       , NULL, &hcommand },
+		{ "declaration_command" , NULL, &hcommand },
+		{ "arithmetic_expansion", NULL, &hassign  },
+		{ "variable_assignment" , NULL, &hassign  },
+		{ "string"              , NULL, &hstring  },
+		{ NULL, NULL, NULL }
+	};
+	
+	__private revAstHighlight_s varDec[] = {
+		{ "variable_assignment", NULL, &hvardec },
+		{ "for_statement"      , NULL, &hvardec },
+		{ "binary_expression"  , NULL, &hvardec },
+		{ "simple_expansion"   , NULL, &hvar    },
+		{ "expansion"          , NULL, &hvar    },
+		{ NULL, NULL, NULL }
+	};
+	
+	__private revAstHighlight_s word[] = {
+		{ "command_name"        , NULL, &hcommand },
+		{ "declaration_command" , NULL, &hcommand },
+		{ "function_definition" , NULL, &hfunction},
+		{ "command"             , NULL, &harg     },
+		{ "file_redirect"       , NULL, &hassign  },
+		{ NULL, NULL, NULL }
+	};
+	
+	__private revAstHighlight_s bash[] = {
+		{ "word"         , word   , NULL      },
+		{ "comment"      , NULL   , &hcomment },
+		{ "variable_name", varDec , NULL      },
+		{ "`"            , NULL   , &hassign  },
+		{ ";"            , NULL   , &hassign  },
+		{ "raw_string"   , NULL   , &hstring  },
+		{ "number"       , NULL   , &hstring  },
+		{ NULL           , bashAny, NULL      }
+	};
+	
+	return bash;
+}
+
+__private revAstHighlight_s* rah_exists(revAstHighlight_s* rah, const char* type){
+	unsigned i;
+	for( i = 0; rah[i].type; ++i ){
+		if( !strcmp(rah[i].type, type) ) return &rah[i];
+	}
+	return &rah[i];
+}
+
+__private highlight_s* rah_find(revAstHighlight_s* rah, char** stack){
+	unsigned count = mem_header(stack)->len;
+	iassert(count);
+	do{
+		rah=rah_exists(rah, stack[--count]);
+		if( rah->hi ) return rah->hi;
+		rah = rah->child;
+	}while( rah );
+	return NULL;
+}
+
+__private void dbg_print_stack(char** stack){
+	unsigned count = mem_header(stack)->len;
+	printf("<[@");
+	while( count --> 0 ){
+		printf("%s.", stack[count]);
+	}
+	printf("@]>");
+}
+
+__private void bash_tokenize_source(const TSNode node, const char *source, char*** stack, revAstHighlight_s* rah) {
+	const char *type = ts_node_type(node);
+	*stack = mem_upsize(*stack,1);
+	(*stack)[mem_header(*stack)->len++] = (char*)type;
+
+	unsigned child_count = ts_node_child_count(node);
+	if( child_count ){
+		for( unsigned i = 0; i < child_count; ++i ){
+			TSNode child = ts_node_child(node, i);
+			bash_tokenize_source(child, source, stack, rah);
+		}
+	}
+	else{
+		unsigned st = ts_node_start_byte(node);
+		unsigned en = ts_node_end_byte(node);
+		const char* sepst = &source[en];
+		const char* sepen = sepst;
+		while( *sepen && (*sepen == ' ' || *sepen == '\t' || *sepen == '\n') ) ++sepen;
+		highlight_s* hi = rah_find(rah, *stack);
+		if( !hi ){
+			dbg_print_stack(*stack);
+			printf("%.*s", en-st, &source[st]);
+			if( sepen - sepst ) printf("%.*s", (int)(sepen-sepst), sepst);
+			puts("");
+			die("internal error, missing highlight");
+		}
+		else{
+			colorfg_set(hi->fg);
+			if( hi->bg ) colorbg_set(hi->bg);
+			if( hi->bold ) bold_set();
+			printf("%.*s", en-st, &source[st]);
+			if( !hi->sep ) colorfg_set(0);
+			if( sepen - sepst ) printf("%.*s", (int)(sepen-sepst), sepst);
+			if( hi->sep ) colorfg_set(0);
+		}
+	}
+	--mem_header(*stack)->len;
+}
+
+void print_highlight(const char* source, const char* lang) {
+	TSParser *parser = ts_parser_new();
+	revAstHighlight_s* rah = NULL;
+
+	if( !strcmp(lang, "bash") ){
+		ts_parser_set_language(parser, tree_sitter_bash());
+		rah = bash_highlight();
+	}
+	else{
+		die("unsupported %s", lang);
+	}
+	TSTree *tree = ts_parser_parse_string(parser, NULL, source, strlen(source));
+	if (!tree) {
+		dbg_error("on parsing code.");
+		puts(source);
+		ts_parser_delete(parser);
+		return;
+	}
+	TSNode root_node = ts_tree_root_node(tree);
+	dbg_info("Root node type: %s\n", ts_node_type(root_node));
+	__free char** stack = MANY(char*, 10);
+	bash_tokenize_source(root_node, source, &stack, rah);
+	mem_free(stack);
+	fflush(stdout);
+	ts_tree_delete(tree);
+	ts_parser_delete(parser);
+}
 

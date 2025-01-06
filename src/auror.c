@@ -141,7 +141,12 @@ int main(int argc, char** argv){
 	notstd_begin();
 	www_begin();
 	tig_begin();
+	
+char* p = load_file("testbash", 1);
+mem_nullterm(p);
+print_highlight(p, "bash");
 
+die("");
 	CACHE_DIR = path_explode(AUROR_CACHE_DIR);
 	
 	__argv option_s* opt = argv_parse(OPT, argc, argv);
@@ -211,7 +216,11 @@ int main(int argc, char** argv){
 			progress(prompt, 1);
 		}
 		progress_end(prompt);
-
+		
+		__free char** selview = readline_listid("Select PKGBUILD to introspect", aurgnam);
+		mforeach(selview, i){	
+			
+		}
 		//create sandbox
 		//install build deps
 		//makepkg
