@@ -1,17 +1,39 @@
 #include <notstd/futex.h>
+#include <notstd/core.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <errno.h>
 
 #ifndef SYS_futex_waitv
 #error "your kernel is too old, upgrade it, think >= 5.16"
 #endif
 
 int futex_to(int *uaddr, int futex_op, int val, const struct timespec *timeout, int *uaddr2, int val3){
-	return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
+	while( 1 ){
+		int ret = syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
+		if( ret  < 0 ){
+			switch( errno ){
+				case EAGAIN: return -1;
+				case EINTR : continue;
+				default    : die("futex error: %m");
+			}
+		}
+		return ret;
+	}
 }
 
 int futex_v2(int *uaddr, int futex_op, int val, unsigned val2, int *uaddr2, int val3){
-	return syscall(SYS_futex, uaddr, futex_op, val, val2, uaddr2, val3);
+	while( 1 ){
+		int ret = syscall(SYS_futex, uaddr, futex_op, val, val2, uaddr2, val3);
+		if( ret  < 0 ){
+			switch( errno ){
+				case EAGAIN: return -1;
+				case EINTR : continue;
+				default    : die("futex error: %m");
+			}
+		}
+		return ret;
+	}
 }
 
 int futex_waitv(futexWaitv_s *waiters, unsigned int nr_futexes, unsigned int flags){

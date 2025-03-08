@@ -18,8 +18,9 @@
 #endif
 
 #define __out
-#define __atomic _Atomic
+#define __atomic volatile _Atomic
 #define __private static
+#define __fallthrough       __attribute__((fallthrough))
 #define __unused            __attribute__((unused))
 #define __cleanup(FNC)      __attribute__((__cleanup__(FNC)))
 #define __printf(FRMT,VA)   __attribute__((format(printf, FRMT, VA)))
@@ -83,6 +84,7 @@
 #define __unsafe_deprecated  __unsafe("-Wdeprecated-declarations")
 #define __unsafe_end         DO_PRAGMA(GCC diagnostic pop)
 
+
 #define EXPAND_STRING(ES) #ES
 
 #define ADDR(VAR) ((uintptr_t)(VAR))
@@ -96,6 +98,6 @@
 
 #define cpu_relax() __builtin_ia32_pause()
 
-
+#define typeofbase(T) __typeof__(T)
 
 #endif

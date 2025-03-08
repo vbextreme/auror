@@ -17,7 +17,6 @@ typedef struct optctx{
 	unsigned  paarg;
 	unsigned  paoff;
 	unsigned  count;
-	int       unmanaged;
 }optctx_s;
 
 __private void opt_die(optctx_s* ctx, const char* desc){
@@ -51,14 +50,14 @@ __private int find_long(optctx_s* ctx, const char* lo){
 	for( unsigned i = 0; i < ctx->count; ++i ){
 		if( !strcmp(ctx->opt[i].lo, lo) ) return i;
 	}
-	return ctx->unmanaged;
+	return -1;
 }
 
 __private int find_short(optctx_s* ctx, const char sh){
 	for( unsigned i = 0; i < ctx->count; ++i ){
 		if( ctx->opt[i].sh == sh ) return i;
 	}
-	return ctx->unmanaged;
+	return -1;
 }
 
 __private void next_is_nopt(optctx_s* ctx, unsigned next){
@@ -69,7 +68,7 @@ __private void next_is_nopt(optctx_s* ctx, unsigned next){
 	const char* str = ctx->argv[next];
 	if( str[0] == '-' ){
 		if( str[1] == '-' ){
-			if( find_long(ctx, str) != ctx->unmanaged ){
+			if( find_long(ctx, str) != -1 ){
 				dbg_info("long option %s exists", str);	
 				goto ONERR;
 			}
@@ -77,7 +76,7 @@ __private void next_is_nopt(optctx_s* ctx, unsigned next){
 		else{
 			const char* p = &str[2];
 			while( *p ){
-				if( find_short(ctx, *p) != ctx->unmanaged ){
+				if( find_short(ctx, *p) != -1 ){
 					dbg_info("short option %c exists", *p);
 					goto ONERR;
 				}
@@ -86,7 +85,7 @@ __private void next_is_nopt(optctx_s* ctx, unsigned next){
 		}
 	}
 	else{
-		if( find_long(ctx, str) != ctx->unmanaged ){
+		if( find_long(ctx, str) != -1 ){
 			dbg_info("long option --- %s exists	", str);
 			goto ONERR;
 		}
@@ -184,7 +183,7 @@ __private void opt_value(optctx_s* ctx, unsigned id, const char* value){
 	}
 }
 
-__private void opt_set(optctx_s* ctx, int id){
+__private int opt_set(optctx_s* ctx, int id){
 	if( id == -1 ){
 		ctx->current = ctx->paarg;
 		opt_die(ctx, "unknow option");
@@ -192,10 +191,11 @@ __private void opt_set(optctx_s* ctx, int id){
 	option_s* opt = &ctx->opt[id];
 	++opt->set;
 	if( opt->set > 1 && !(opt->flags & OPT_REPEAT) ) opt_die(ctx, "unacepted repeated option");
+	return 0;
 }
 
 __private void add_to_option(optctx_s* ctx, int id, kv_s* kv){
-	opt_set(ctx, id);
+	if( opt_set(ctx, id) ) return;
 	if( (ctx->opt[id].flags & OPT_TYPE) != OPT_NOARG ){
 		char* v = NULL;
 		if( !kv || !*kv->value ){
@@ -209,6 +209,12 @@ __private void add_to_option(optctx_s* ctx, int id, kv_s* kv){
 	}
 	else if( kv && *kv->value ){
 		opt_die(ctx, "optiont unaspected value");
+	}
+	if( ctx->opt[id].flags & OPT_SLURP ){
+		while( ++ctx->current < ctx->argc ){
+			++ctx->opt[id].set;
+			opt_value_new(ctx->opt, id)->str = ctx->argv[ctx->current];
+		}
 	}
 }
 
@@ -246,11 +252,9 @@ option_s* argv_parse(option_s* opt, int argc, char** argv){
 		.paoff     = 0,
 		.opt       = opt,
 		.count     = copt,
-		.unmanaged = -1
 	};
-
+	
 	for( unsigned i = 0; i < copt; ++i ){
-		if( opt[i].flags & OPT_EXTRA ) ctx.unmanaged = i;
 		opt[i].value = MANY(optValue_u, 2);
 		opt[i].set = 0;
 	}
@@ -270,7 +274,7 @@ option_s* argv_parse(option_s* opt, int argc, char** argv){
 			long_option(&ctx);
 		}
 	}
-
+	
 	return opt;
 }
 
@@ -291,9 +295,9 @@ void argv_usage(option_s* opt, const char* argv0){
 	const unsigned count = opt_count(opt);
 	printf("%s [options] ", argv0);
 	for( unsigned i = 0; i < count; ++i ){
-		if( opt[i].flags & OPT_EXTRA ){
-			puts("[extra]");
-			printf("extra:\n%s", opt[i].desc);
+		if( opt[i].flags & OPT_SLURP ){
+			puts("[slurp]");
+			printf("slurp:\n%s", opt[i].desc);
 			break;
 		}
 	}
@@ -305,7 +309,7 @@ void argv_usage(option_s* opt, const char* argv0){
 		if( *opt[i].lo ) printf("%s ", opt[i].lo);
 		if( opt[i].flags & OPT_REPEAT ) printf("<can repeat this option>");
 		if( opt[i].flags & OPT_ARRAY  ) printf("<can use as array>");
-		if( opt[i].flags & OPT_EXTRA  ) printf("<accept not option value>");
+		if( opt[i].flags & OPT_SLURP  ) printf("<accept all remaining value>");
 		if( opt[i].flags & OPT_EXISTS ) printf("<path need exists>");
 		if( opt[i].flags & OPT_DIR    ) printf("<is dir>");
 		switch( opt[i].flags & OPT_TYPE ){

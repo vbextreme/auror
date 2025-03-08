@@ -1,4 +1,4 @@
-auror v0.0.7
+auror v0.0.8
 =============
 Introduction:
 =============
@@ -20,6 +20,7 @@ Manual Build
 
 State:
 ======
+* v0.0.8 resolve dependency, work in progress
 * v0.0.7 select input, hightlight pkgbuild
 * v0.0.6 downloading PKGBUILD
 * v0.0.5 ready to execute hestia

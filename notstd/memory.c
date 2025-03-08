@@ -11,6 +11,7 @@
 
 #define MEMORY_IMPLEMENTATION
 #include <notstd/memory.h>
+#include <notstd/threads.h>
 
 #define HMEM_FLAG_CHECK    0xF1CA
 #define HMEM_CHECK(HM)     (((HM)->flags & 0xFFFF) == HMEM_FLAG_CHECK)
@@ -25,58 +26,6 @@ unsigned PAGE_SIZE;
 #else
 #define os_page_size() 512
 #endif
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////
-// lock multiple reader one writer fork https://gist.github.com/smokku/653c469d695d60be4fe8170630ba8205 
-
-#define LOCK_OPEN    1
-#define LOCK_WLOCKED 0
-
-__private void lock_ctor(hmem_s* hm){
-	hm->lock = LOCK_OPEN;
-}
-
-__private void unlock(hmem_s* hm){
-	int32_t current, wanted;
-	do {
-		current = hm->lock;
-		if( current == LOCK_OPEN ) return;
-		wanted = current == LOCK_WLOCKED ? LOCK_OPEN : current - 1;
-	}while( __sync_val_compare_and_swap(&hm->lock, current, wanted) != current );
-	futex(&hm->lock, FUTEX_WAKE, 1, NULL, NULL, 0);
-}
-
-__private void lock_read(hmem_s* hm){
-    int32_t current;
-	while( (current = hm->lock) == LOCK_WLOCKED || __sync_val_compare_and_swap(&hm->lock, current, current + 1) != current ){
-		while( futex(&hm->lock, FUTEX_WAIT, current, NULL, NULL, 0) != 0 ){
-			cpu_relax();
-			if (hm->lock >= LOCK_OPEN) break;
-		}
-	}
-}
-
-__private void lock_write(hmem_s* hm){
-	unsigned current;
-	while( (current = __sync_val_compare_and_swap(&hm->lock, LOCK_OPEN, LOCK_WLOCKED)) != LOCK_OPEN ){
-		while( futex(&hm->lock, FUTEX_WAIT, current, NULL, NULL, 0) != 0 ){
-			cpu_relax();
-			if( hm->lock == LOCK_OPEN ) break;
-		}
-		if( hm->lock != LOCK_OPEN ){
-			futex(&hm->lock, FUTEX_WAKE, 1, NULL, NULL, 0);
-		}
-	}
-}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -117,7 +66,7 @@ __malloc void* mem_alloc(unsigned sof, size_t count, mcleanup_f dtor){
 	hm->cleanup = dtor;
 	hm->len     = 0;
 	hm->sof     = sof;
-	lock_ctor(hm);
+	mrw_ctor(&hm->lock);
 	void* ret = HMEM_TO_ADDR(hm);
 	iassert( ADDR(ret) % sizeof(uintptr_t) == 0 );
 	dbg_info("mem addr: %p header: %p", ret, hm);
@@ -251,6 +200,12 @@ void* mem_push(void* restrict dst, void* restrict element){
 	return dst;
 }
 
+unsigned mem_ipush(void* restrict pdst){
+	*(void**)pdst = mem_upsize(*(void**)pdst, 1);
+	hmem_s* hm = givehm(*(void**)pdst);
+	return hm->len++;
+}
+
 void* mem_pop(void* restrict mem, void* restrict element){
 	hmem_s* hm = givehm(mem);
 	if( !hm->len ) return NULL;
@@ -324,17 +279,17 @@ void mem_free_raii(void* addr){
 }
 
 int mem_lock_read(void* addr){
-	lock_read(givehm(addr));
+	mrw_read(&givehm(addr)->lock);
 	return 1;
 }
 
 int mem_lock_write(void* addr){
-	lock_write(givehm(addr));
+	mrw_write(&givehm(addr)->lock);
 	return 1;
 }
 
 int mem_unlock(void* addr){
-	unlock(givehm(addr));
+	mrw_unlock(&givehm(addr)->lock);
 	return 0;
 }
 
@@ -353,6 +308,7 @@ void mem_zero(void* addr){
 }
 
 void* mem_nullterm(void* addr){
+	if( !addr ) return addr;
 	hmem_s* hm = givehm(addr);
 	if( hm->len + 1 > hm->size - sizeof(hmem_s) ){
 		addr = mem_realloc(addr, hm->len+1);

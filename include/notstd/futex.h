@@ -26,6 +26,10 @@ int futex_v2(int *uaddr, int futex_op, int val, unsigned val2, int *uaddr2, int 
 	unsigned: futex_v2\
 )(ADDR, OP, VAL, V2TO, ADDR2, VAL3)	
 
+#define futex_wait_private(ADDR, VAL) futex((int*)(ADDR), FUTEX_WAIT | FUTEX_PRIVATE_FLAG, (VAL), NULL, NULL, 0)
+#define futex_wake_private(ADDR) futex((int*)(ADDR), FUTEX_WAKE | FUTEX_PRIVATE_FLAG, 1, NULL, NULL, 0)
+#define futex_nwake_private(ADDR, N) futex((int*)(ADDR), FUTEX_WAKE | FUTEX_PRIVATE_FLAG, (N), NULL, NULL, 0)
+
 typedef struct futex_waitv futexWaitv_s;
 
 int futex_waitv(struct futex_waitv *waiters, unsigned int nr_futexes, unsigned int flags);

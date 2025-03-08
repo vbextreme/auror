@@ -11,6 +11,7 @@ typedef enum {
 	JV_NULL,
 	JV_BOOLEAN,
 	JV_NUM,
+	JV_UNUM,
 	JV_FLOAT,
 	JV_STRING,
 	JV_OBJECT,
@@ -40,6 +41,7 @@ typedef struct jproperty{
 	jvalue_s   value;
 }jproperty_s;
 
+const char* jvalue_type_to_name(jvtype_e type);
 void jvalue_dtor(jvalue_s* jv);
 jvalue_s* jvalue_property_new(jvalue_s* jv, char* name);
 jvalue_s* jvalue_property(jvalue_s* jv, const char* name);

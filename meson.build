@@ -1,7 +1,10 @@
 ###########
 # project #
 ###########
-project('auror', 'c', version: '0.0.7')
+#
+#-S liburing linux-headers
+
+project('auror', 'c', version: '0.0.8')
 cc = meson.get_compiler('c')
 localPath = meson.current_source_dir()
 
@@ -10,7 +13,7 @@ type = 'executable'
 version = {
   'mmr': meson.project_version().split('.'),
   'str': meson.project_version(),
-  'dsc': 'select input, hightlight pkgbuild'
+  'dsc': 'resolve dependency, work in progress'
 }
 
 if get_option('eveloper')
@@ -47,6 +50,8 @@ src += [ 'notstd/math.c' ]
 src += [ 'notstd/memory.c' ]
 src += [ 'notstd/extras.c' ]
 src += [ 'notstd/futex.c' ]
+src += [ 'notstd/threads.c' ]
+src += [ 'notstd/rbuffer.c' ]
 src += [ 'notstd/str.c' ]
 src += [ 'notstd/opt.c' ]
 src += [ 'notstd/delay.c' ]
@@ -55,11 +60,20 @@ src += [ 'notstd/rbtree.c' ]
 src += [ 'notstd/utf8.c' ]
 src += [ 'notstd/fzs.c' ]
 src += [ 'notstd/tig.c' ]
+src += [ 'notstd/request.c' ]
 
 src += [ 'src/www.c' ]
 src += [ 'src/archive.c' ]
 src += [ 'src/ini.c' ]
 src += [ 'src/inutility.c' ]
+src += [ 'src/config.c' ]
+src += [ 'src/status.c' ]
+src += [ 'src/jobs.c' ]
+src += [ 'src/transaction.c' ]
+src += [ 'src/download.c' ]
+src += [ 'src/database.c' ]
+src += [ 'src/desc.c' ]
+src += [ 'src/package.c'  ]
 src += [ 'src/aur.c' ]
 src += [ 'src/auror.c' ]
 src += [ 'src/pkgdescparser.c' ]
@@ -153,8 +167,11 @@ add_global_arguments('-DVERSION_REV="' + version['mmr'][2] + '"', language: 'c')
 # libraries dependencies #
 ##########################
 libDeps  = [ cc.find_library('m', required : true) ] # math
+libDeps += [ cc.find_library('uring', required : true) ]
+libDeps += [ cc.find_library('cryptominisat5', required : true) ]
 libDeps += [ dependency('libcurl', required: true) ]
 libDeps += [ dependency('zlib', required: true) ]
+libDeps += [ dependency('libzstd', required: true) ]
 libDeps += [ dependency('readline', required: true) ]
 libDeps += [ dependency('libgit2', required: true) ]
 libDeps += [ dependency('tree-sitter', required: true) ]

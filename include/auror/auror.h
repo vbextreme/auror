@@ -5,12 +5,14 @@ typedef enum{
 	O_u,
 	O_s,
 	O_i,
+	O_a,
 	O_n,
+	O_d,
+	O_c,
 	O_h
 }OPT_E;
 
-#define AUROR_CACHE_DIR      "~/.cache/auror"
-#define AUROR_CACHE_PKGBUILD "aur"
+#define AUROR_CONFIG_PATH "/etc/auror/auror.json"
 
 
 

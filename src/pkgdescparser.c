@@ -192,7 +192,7 @@ ddatabase_s* database_new(char* name, char* location, char* url){
 	mem_header(db)->cleanup = database_cleanup;
 	return db;
 }
-
+/*
 desc_s* database_add(ddatabase_s* db, void* descfile, unsigned size, unsigned flags){
 	db->desc = mem_upsize(db->desc, 1);
 	desc_s* ret = &db->desc[mem_header(db->desc)->len++];
@@ -204,7 +204,7 @@ desc_s* database_add(ddatabase_s* db, void* descfile, unsigned size, unsigned fl
 	ret->flags = flags;
 	return ret;
 }
-
+*/
 void database_flush(ddatabase_s* db){
 	//dbg_info("");
 	mem_qsort(db->desc, desc_desc_desc_name_cmp);
@@ -290,7 +290,7 @@ __private void cast_jvaue_tag(desc_s* desc, jvalue_s* jv, const char* field){
 		break;
 	}
 }
-
+/*
 void database_import_json(ddatabase_s* db, jvalue_s* results){
 	__private char* fields[] = { 
 		"Name", "PackageBase", "Version", "Description", "URL", "Maintainer", "URLPath",
@@ -310,7 +310,7 @@ void database_import_json(ddatabase_s* db, jvalue_s* results){
 		}
 	}
 }
-
+*/
 __private descTag_s* desc_tag_name(desc_s* desc){
 	descTag_s fitag = { .name = "NAME" };
 	descTag_s* tag = rbtree_search(&desc->tags, &fitag);
@@ -332,32 +332,31 @@ void database_delete_byname(ddatabase_s* db, const char* find){
 		break;
 	}
 }
-
+/*
 desc_s* database_search_byname(ddatabase_s* db, const char* name){
 	return mem_bsearch(db->desc, (char*)name, desc_desc_str_name_cmp);
 }
-
+*/
+/*
 ddatabase_s* database_unpack(char* name, char* location, char* url, void* dbTarGz, unsigned flags){
 	dbg_info("unpack %s", name);
-	__free void* dbTar   = gzip_decompress(dbTarGz);
+	__free void* dbTar   = gzip_decompress_all(dbTarGz);
 	if( !dbTar ){
 		dbg_error("%m ungzip");	
 		return NULL;
 	}
 	
-	__tar tar_s tar;
+	tar_s tar;
 	tar_mopen(&tar, dbTar);
-	tarent_s* ent;
+	tarent_s ent;
 	ddatabase_s* db  = database_new(name, location, url);
 
-	while( (ent=tar_next(&tar)) ){
-		if( ent->type == TAR_FILE ){
-			if( !database_add(db, ent->data, ent->size, flags) ){
-				mem_free(ent);
+	while( tar_next(&tar,&ent) ){
+		if( ent.type == TAR_FILE ){
+			if( !database_add(db, ent.data, ent.size, flags) ){
 				mem_free(db);
 				return NULL;
 			}
-			mem_free(ent);
 		}
 	}
 	if( (errno=tar_errno(&tar)) ){
@@ -367,7 +366,8 @@ ddatabase_s* database_unpack(char* name, char* location, char* url, void* dbTarG
 	database_flush(db);
 	return db;
 }
-
+*/
+/*
 fzs_s* database_match_fuzzy(fzs_s* vf, ddatabase_s* db, const char* name){
 	unsigned const count = mem_header(db->desc)->len;
 	for( unsigned i = 0; i < count; ++i ){
@@ -396,7 +396,7 @@ fzs_s* database_match_fuzzy(fzs_s* vf, ddatabase_s* db, const char* name){
 	}
 	return vf;
 }
-
+*/
 
 
 

@@ -7,6 +7,12 @@
 
 __private jvalue_s JVERR = { .type = JV_ERR, .parent = NULL, .p = NULL };
 
+const char* jvalue_type_to_name(jvtype_e type){
+	const char* TNAME[] = { "null", "boolean", "signed", "unsigned", "float", "string", "object", "array" };
+	if( type <0 || type > JV_ARRAY ) return "error";
+	return TNAME[type];
+}
+
 __private int jpcmp(const void* a, const void* b){
 	const jproperty_s* jpa = a;
 	const jproperty_s* jpb = b;
@@ -171,9 +177,9 @@ __private const char* json_parse_to_element(const char* parse){
 	return parse;
 }
 
-__private int json_parse_validate_num(const char** outparse, const char** err){
+__private jvtype_e json_parse_validate_num(const char** outparse, const char** err){
 	const char* parse = *outparse;
-	int ret = 0;
+	int ret = JV_UNUM;
 	
 	if( parse[0] == '0' && parse[1] >= '0' && parse[1] <= '9' ){
 		*err = "leading zero in number";
@@ -181,6 +187,7 @@ __private int json_parse_validate_num(const char** outparse, const char** err){
 	}
 	
 	if( *parse == '-' ){
+		ret = JV_NUM;
 		++parse;
 		if( parse[0] == '0' && parse[1] >= '0' && parse[1] <= '9' ){
 			*outparse = &parse[1];
@@ -191,7 +198,7 @@ __private int json_parse_validate_num(const char** outparse, const char** err){
 	
 	while( *parse >= '0' && *parse <= '9' ) ++parse;
 	if( *parse == '.' || *parse == 'e'  || *parse == 'E' ){
-		ret = 1;
+		ret = JV_FLOAT;
 		++parse;
 		if( !(*parse >= '0' && *parse <= '9') && *parse != '+' && *parse != '-' ){
 			*outparse = parse;
@@ -210,16 +217,11 @@ __private int json_parse_num(const char** outparse, const char** err, jvalue_s* 
 	char* end = NULL;
 	errno = 0;
 	
-	switch( json_parse_validate_num(outparse, err) ){
-		case -1: return -1;
-		case 0 :
-			value->type = JV_NUM;
-			value->n = strtol(stnum, &end, 10);
-		break;
-		case 1 :
-			value->type = JV_FLOAT;
-			value->f = strtod(stnum, &end);
-		break;
+	switch( (value->type=json_parse_validate_num(outparse, err)) ){
+		default: case JV_ERR: return -1;
+		case JV_NUM  : value->n = strtol(stnum, &end, 10); break;
+		case JV_UNUM : value->u = strtoul(stnum, &end, 10); break;
+		case JV_FLOAT: value->f = strtod(stnum, &end); break;
 	}
 	
 	if( errno ){
@@ -379,7 +381,6 @@ __private const char* checkup_term(const char** par, const char** err){
 int json_decode_partial(jvalue_s* out, const char** par, const char** err){
 	const char* parse = *par;
 	char* str;
-	int type;
 	jvalue_s* jv = out;
 	parse = json_parse_to_element(parse);
 
@@ -518,7 +519,7 @@ int json_decode_partial(jvalue_s* out, const char** par, const char** err){
 					*par = parse;
 					return -1;
 				}
-				if( (type=json_parse_num(&parse, err, jv)) < 0 ){
+				if( json_parse_num(&parse, err, jv) < 0 ){
 					*par = parse;
 					return -1;
 				}
@@ -596,7 +597,7 @@ jvalue_s* json_decode(const char* str, const char** endstr, const char **outErr)
 	if( endstr ) *endstr = str;
 	if( outErr ) *outErr = err;
 	dbg_error("%s", err);
-	dbg_info("%s", str);
+	dbg_info("%s", str);	
 	mem_free(jv);
 	return NULL;
 }
@@ -620,7 +621,11 @@ void jvalue_dump(jvalue_s* jv){
 		case JV_NUM:
 			printf("%ld", jv->n);
 		break;
-
+		
+		case JV_UNUM:
+			printf("%ld", jv->u);
+		break;
+		
 		case JV_FLOAT:
 			str_printf("%f", jv->f);
 		break;
@@ -728,12 +733,17 @@ __private void jpenc(jproperty_s* pro, jenc_s* je, int hum){
 __private void encode(jvalue_s* jv, jenc_s* je, int hum){
 	switch( jv->type ){
 		case JV_ERR: die("internal error"); break;
-
+		
 		case JV_NUM:
 			je->str = mem_upsize(je->str, 64);
 			mem_header(je->str)->len += sprintf(&je->str[mem_header(je->str)->len], "%ld", jv->n);
 		break;
-
+		
+		case JV_UNUM:
+			je->str = mem_upsize(je->str, 64);
+			mem_header(je->str)->len += sprintf(&je->str[mem_header(je->str)->len], "%lu", jv->u);
+		break;
+		
 		case JV_FLOAT:
 			je->str = mem_upsize(je->str, 64 + je->fprec);
 			mem_header(je->str)->len += sprintf(&je->str[mem_header(je->str)->len], "%.*f", je->fprec, jv->f);

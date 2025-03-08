@@ -52,12 +52,12 @@ extern unsigned PAGE_SIZE;
 
 typedef struct hmem{
 	__rdwr mcleanup_f cleanup;
-	__rdwr unsigned   len;
-	__rdon unsigned   sof;
-	__rdon unsigned   refs;
-	__prv8 int        lock;
-	__rdon unsigned   size;
-	__prv8 unsigned   flags;
+	__rdwr unsigned     len;
+	__rdon unsigned     sof;
+	__rdon unsigned     refs;
+	__prv8 __atomic int lock;
+	__rdon unsigned     size;
+	__prv8 unsigned     flags;
 }hmem_s;
 
 typedef struct mslice{
@@ -90,6 +90,8 @@ void* mem_widen(void* mem, size_t index, size_t count);
 void* mem_insert(void* restrict dst, size_t index, void* restrict src, size_t count);
 
 void* mem_push(void* restrict dst, void* restrict element);
+//dst &mem
+unsigned mem_ipush(void* restrict dst);
 
 void* mem_pop(void* restrict mem, void* restrict element);
 
@@ -162,6 +164,10 @@ __private void* mem_addressing(void* addr, unsigned long index){
 __private size_t mem_available(void* addr){
 	hmem_s* hm = mem_header(addr);
 	return ((hm->size - sizeof(hmem_s)) / hm->sof) - hm->len;
+}
+
+__private unsigned* mem_len(void* addr){
+	return &mem_header(addr)->len;
 }
 
 __unsafe_end;

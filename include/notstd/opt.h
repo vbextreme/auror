@@ -10,7 +10,7 @@
 #define OPT_FNUM   0x0004
 #define OPT_PATH   0x0005
 #define OPT_REPEAT 0x0100
-#define OPT_EXTRA  0x0200
+#define OPT_SLURP  0x0200
 #define OPT_ARRAY  0x0400
 #define OPT_END    0x0800
 #define OPT_EXISTS 0x1000

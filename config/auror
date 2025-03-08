@@ -1,0 +1,12 @@
+use system
+use os.base
+use os.root
+use os.config
+prv 0777
+dir home
+uid %u
+gid %g
+dir %D
+dir build
+script auror.prepare
+

@@ -1,0 +1,44 @@
+{
+	"options" :{
+		"arch"    : "x86_64",
+		"parallel": 8,
+		"retry"   : 3,
+		"timeout" : 10,
+		"aur"     : false,
+		"db"      : "/var/lib/pacman/sync",
+		"local"   : "/var/lib/pacman/local",
+		"lock"    : "/var/lib/pacman/db.lck",
+		"cache"   : "/var/cache/pacman"
+	},
+	"repository": [
+		{ "name": "core" , "path": "/etc/pacman.d/mirrorlist" },
+		{ "name": "extra", "path": "/etc/pacman.d/mirrorlist" }
+	],
+	"theme": {
+		"progress": {
+			"vcolors": [10, 11, 12, 13, 14],
+			"hcolor" : 8,
+			"hsize"  : 11
+		},
+		"speed":{
+			"range": [ 
+				{"value": 0.5, "color": 9},
+				{"value": 1.0, "color": 11},
+				{"value": 3.0, "color": 27},
+				{"value": 999, "color": 46}
+			]
+		},
+		"repository":[
+			{ "key": "core" , "value": 10 },
+			{ "key": "extra", "value": 10 },
+			{ "key": "aur"  , "value": 14 },
+			{ "key": "pkg"  , "value": 230},
+			{ "key": ">>"   , "value": 12 },
+			{ "key": "!>"   , "value": 9  }
+		]
+	}
+}
+
+
+
+

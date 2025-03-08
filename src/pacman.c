@@ -4,7 +4,7 @@
 #include <auror/inutility.h>
 
 #include <dirent.h>
-
+/*
 __private void pacman_scan_installed_or_custom(pacman_s* pacman){
 	ddatabase_s* install = pacman->db[pacman->iddbinstall];
 	ddatabase_s* aur     = pacman->db[pacman->iddbaur];
@@ -180,4 +180,4 @@ desc_s* pacman_pkg_search(pacman_s* pacman, const char* name){
 
 
 
-
+*/

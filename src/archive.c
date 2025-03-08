@@ -4,9 +4,57 @@
 #include <auror/archive.h>
 
 #include <archive.h>
-#include <zlib.h>
+#include <zstd.h>
 
-void* gzip_decompress(void* data) {
+gzip_t* gzip_ctor(gzip_t* gz){
+	memset(gz, 0, sizeof(gzip_t));
+	if( inflateInit2(gz, 16 + MAX_WBITS) != Z_OK ) die("Unable to initialize zlib");
+	return gz;
+}
+
+void gzip_dtor(gzip_t* gz){
+	if( gz->next_out ) mem_free(gz->next_out);
+	inflateEnd(gz);
+}
+
+int gzip_decompress(gzip_t* gz, void* data, size_t size){
+	size_t framesize = size * 6;
+	char* dec = (char*)gz->next_out;
+	if( !dec ){
+		dec = MANY(char, framesize);
+	}
+	else{
+		dec = mem_upsize(dec, framesize);
+	}
+	
+	gz->avail_in  = size;
+	gz->next_in   = (Bytef*)data;
+	gz->next_out  = (Bytef*)(dec + *mem_len(dec));
+	gz->avail_out = framesize;
+	
+	int ret;
+	do{
+		if( (ret=inflate(gz, Z_NO_FLUSH)) == Z_ERRNO ){
+			mem_free(dec);
+			gz->next_out = NULL;
+			errno = EIO;
+			dbg_error("decompression failed");
+			return -1;
+		}
+		//if( ++n == 5 ) die("");
+		mem_header(dec)->len += framesize - gz->avail_out;
+		if( gz->avail_out == 0 ){
+			dec           = mem_upsize(dec, framesize);
+			framesize     = mem_available(dec);
+			gz->avail_out = framesize;
+		}
+		gz->next_out  = (Bytef*)(mem_addressing(dec, mem_header(dec)->len));
+	}while( ret != Z_STREAM_END && (ret == 0 && gz->avail_in != 0));
+	gz->next_out = (Bytef*)dec;
+	return ret == Z_STREAM_END ? 0 : 1;
+}
+
+void* gzip_decompress_all(void* data) {
 	z_stream strm;
 	memset(&strm, 0, sizeof(strm));
 	if( inflateInit2(&strm, 16 + MAX_WBITS) != Z_OK ) die("Unable to initialize zlib");
@@ -40,6 +88,32 @@ void* gzip_decompress(void* data) {
 	return dec;
 }
 
+void* zstd_decompress(void* data){
+	const size_t isize = mem_header(data)->len;
+	const size_t chunk = ZSTD_DStreamOutSize();
+	char* buf = MANY(char, chunk);
+	ZSTD_DCtx* const dctx = ZSTD_createDCtx();
+	if( !dctx ) die("unable to create zstd ctx");
+	ZSTD_inBuffer inp = {
+		.src  = data,
+		.size = isize,
+		.pos  = 0
+	};
+	ZSTD_outBuffer out;
+	while( inp.pos < inp.size ){
+		buf = mem_upsize(buf, chunk);
+		out.dst  = &buf[mem_header(buf)->len];
+		out.size = chunk;
+		out.pos  = 0;
+		size_t const ret = ZSTD_decompressStream(dctx, &out , &inp);
+		mem_header(buf)->len += out.pos;
+		if( ZSTD_isError(ret) ) die("zstd unable get frame: %s", ZSTD_getErrorName(ret));
+	}
+	ZSTD_freeDCtx(dctx);
+	return buf;
+}
+
+
 #define TAR_BLK  148
 #define TAR_CHK  8
 #define TAR_SIZE 512
@@ -65,7 +139,7 @@ typedef struct htar_s{
 	char pad[12];
 }htar_s;
 
-__private htar_s zerotar;
+__private const htar_s zerotar;
 
 void tar_mopen(tar_s* tar, void* data){
 	tar->start  = data;
@@ -152,13 +226,12 @@ __private int htar_pax(tar_s* tar, htar_s* h, tarent_s* ent){
 			ent->size = strtoul(v, NULL, 10);
 		}
 		else if( !strncmp(k, "path", 4) ){
-			if( ent->path ) mem_free(ent->path);
-			ent->path = MANY(char, (ev-v) + 1);
+			if( ev-v >= PATH_MAX ) die("tar ent unsupported path > %u", PATH_MAX );
 			memcpy(ent->path, v, ev - v);
 			ent->path[ev-v] = 0;
 		}
 		else{
-			//TODO
+			dbg_warning("todo add this: '%s' = '%.*s'", k, (int)(ev-v), v);
 		}
 	}
 
@@ -176,16 +249,11 @@ __private void htar_next_htar(tar_s* tar, htar_s* h){
 	tar->loaddr += sizeof(htar_s) + rawsize;
 }
 
-__private void ent_dtor(void* ent){
-	tarent_s* e = ent;
-	if( e->path ) mem_free(e->path);
-}
-
-tarent_s* tar_next(tar_s* tar){
+tarent_s* tar_next(tar_s* tar, tarent_s* ent){
 	htar_s* h;
 	tarent_s pax = {0};
- 	tarent_s* ent;
-	
+	memset(ent, 0, sizeof(tarent_s));
+
 	while( (h = htar_get(tar)) ){
 		switch( h->typeflag ){
 			case 'g':
@@ -199,10 +267,6 @@ tarent_s* tar_next(tar_s* tar){
 			break;
 			
 			case '0' ... '9':
-				ent = NEW(tarent_s);
-				mem_header(ent)->cleanup = ent_dtor;
-				memset(ent, 0, sizeof(tarent_s));
-				
 				ent->type = h->typeflag - '0';
 				if( pax.size > 0 ){
 					ent->size = pax.size;
@@ -215,18 +279,18 @@ tarent_s* tar_next(tar_s* tar){
 				}
 				ent->data = ent->size ? (void*)(tar->loaddr + sizeof(htar_s)) : NULL;
 				
-				if( pax.path ){
-					ent->path = pax.path;
-					pax.path = NULL;
+				if( pax.path[0] ){
+					strcpy(ent->path, pax.path);
+					pax.path[0] = 0;
 				}
-				else if( tar->global.path ){
-					ent->path = str_dup(tar->global.path, 0);
+				else if( tar->global.path[0] ){
+					strcpy(ent->path, tar->global.path);
 				}
 				else{
 					if( h->prefix[0] ){
 						size_t pl = strnlen(h->prefix, sizeof h->prefix);
 						size_t nl = strnlen(h->name, sizeof h->name);
-						ent->path = MANY(char, pl+nl+2);
+						if( pl+nl+1 >= PATH_MAX ) die("tar ent unsupported path > %u", PATH_MAX );
 						memcpy(ent->path, h->prefix, pl);
 						ent->path[pl] = '/';
 						memcpy(&ent->path[pl+1], h->name, nl);
@@ -234,14 +298,18 @@ tarent_s* tar_next(tar_s* tar){
 					}
 					else{
 						size_t nl = strnlen(h->name, sizeof h->name);
-						ent->path = MANY(char, nl+1);
+						if( nl >= PATH_MAX ) die("tar ent unsupported path > %u", PATH_MAX );
 						memcpy(ent->path, h->name, nl);
 						ent->path[nl] = 0;
 					}
 				}
+				ent->uid  = strtoul(h->uid, NULL, 10);
+				ent->gid  = strtoul(h->gid, NULL, 10);
+				ent->perm = strtol(h->mode, NULL, 8);
+				if( ent->type == TAR_SYMBOLIC_LINK ) ent->data = h->linkname;
 				htar_next_ent(tar, ent);
 			return ent;
-
+			
 			default:
 				dbg_error("unknow type");
 				goto ONERR;
@@ -250,25 +318,23 @@ tarent_s* tar_next(tar_s* tar){
 	}
 	
 ONERR:
-	if( pax.path ) mem_free(pax.path);
 	return NULL;
-}
-
-void tar_close(tar_s* tar){
-	if( tar->global.path ){
-		mem_free(tar->global.path);
-	}
-}
-
-void tar_cleanup(void* ptar){
-	tar_close(ptar);
 }
 
 int tar_errno(tar_s* tar){
 	return tar->err;
 }
 
-
+unsigned tar_count(void* data, tartype_e type){
+	unsigned count = 0;
+	tar_s tmp;
+	tar_mopen(&tmp, data);
+	tarent_s ent;
+	while( tar_next(&tmp, &ent) ){
+		if( ent.type == type ) ++count;
+	}
+	return count;
+}
 
 
 

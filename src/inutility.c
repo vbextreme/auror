@@ -1,5 +1,8 @@
+#undef DBG_ENABLE
+
 #include <notstd/core.h>
 #include <notstd/str.h>
+#include <notstd/threads.h>
 
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -9,10 +12,14 @@
 #include <pwd.h>
 #include <limits.h>
 #include <dirent.h>
+#include <termios.h>
+
 #include <readline/readline.h>
 
 #include <tree_sitter/api.h>
 #include <tree_sitter/tree-sitter-bash.h>
+
+#include <auror/inutility.h>
 
 char* load_file(const char* fname, int exists){
 	dbg_info("loading %s", fname);
@@ -31,6 +38,30 @@ char* load_file(const char* fname, int exists){
 	if( nr < 0 ) die("unable to read file: %s, error: %m", fname);
 	buf = mem_fit(buf);
 	return buf;
+}
+
+delay_t file_time_sec_get(const char* path){
+	struct stat info;
+	if( stat(path, &info) ){
+		dbg_error("stat fail: %m");
+		return 0;
+	}
+	return info.st_mtim.tv_sec;
+}
+
+void file_time_sec_set(const char* path, delay_t sec){
+	struct stat info;
+	struct timespec ts[2];
+	if( stat(path, &info) ){
+		dbg_error("stat fail: %m");
+		return;
+	}
+	ts[0] = info.st_atim;
+	ts[1].tv_sec = sec;
+	ts[1].tv_nsec = 0;
+	if( utimensat(AT_FDCWD, path, ts, 0) ) {
+		dbg_error("fail to set modified time: %m");
+	}
 }
 
 int dir_exists(const char* path){
@@ -84,6 +115,42 @@ int vercmp(const char *a, const char *b){
 	return 0;
 }
 
+char* path_cats(char* dst, char* src, unsigned len){
+	if( !src || !dst ) return dst;
+	if( !len ) len = strlen(src);
+	if( !len ) return dst;
+	unsigned dl = mem_header(dst)->len;
+	dst = mem_upsize(dst, len + 2);
+	if( dl && dst[dl-1] == '/' ){
+		if( src[0] == '/' ){
+			memcpy(&dst[dl-1], src, len);
+			dl += len - 1;
+		}
+		else{
+			memcpy(&dst[dl], src, len);
+			dl += len;
+		}
+	}
+	else{
+		if( src[0] == '/' ){
+			memcpy(&dst[dl], src, len);
+			dl += len;
+		}
+		else{
+			dst[dl] = '/';
+			memcpy(&dst[dl+1], src, len);
+			dl += len + 1;
+		}
+	}
+	dst[dl] = 0;
+	mem_header(dst)->len = dl;
+	return dst;
+}
+
+char* path_cat(char* dst, char* src){
+	return path_cats(dst, src, mem_header(src)->len);
+}
+
 char* path_home(char* path){
 	char *hd;
 	if( (hd = getenv("HOME")) == NULL ){
@@ -111,8 +178,7 @@ char* path_explode(const char* path){
 		getcwd(cwd, PATH_MAX);
 		const char* bk = strrchr(cwd, '/');
 		iassert( bk );
-		if( bk > cwd ) --bk;
-		return str_printf("%s%s", bk, &path[2]);
+		return str_printf("%.*s%s", (int)(bk-cwd), cwd, &path[2]);
 	}
 	return str_dup(path, 0);
 }
@@ -200,6 +266,243 @@ void shell(const char* errprompt, const char* exec){
 	if( !WIFEXITED(ex) || WEXITSTATUS(ex) != 0) die("%s: %d %d", errprompt, WIFEXITED(ex), WEXITSTATUS(ex));
 }
 
+void term_line_cls(void){
+	fputs("\033[2K", stdout);
+}
+
+void term_scroll_region(unsigned y1, unsigned y2){
+	printf("\033[%u;%ur", y1, y2);
+}
+
+unsigned term_scroll_begin(unsigned bottomLine){
+	unsigned w, h;
+	term_wh(&w, &h);
+	unsigned x, y;
+	term_cursorxy(&x, &y);
+	if( y >= h - bottomLine ){
+		print_repeat(bottomLine, '\n');
+		y -= bottomLine;
+		term_gotoxy(0, y);
+		fflush(stdout);
+	}
+	term_scroll_region(1, h-bottomLine);
+	term_gotoxy(0,y);
+	fflush(stdout);
+	return h-bottomLine;
+}
+
+void term_scroll_end(void){
+	unsigned w, h;
+	term_wh(&w, &h);
+	term_cursor_store();
+	fflush(stdout);
+	term_scroll_region(1, h);
+	fflush(stdout);
+	term_cursor_load();
+	fflush(stdout);
+}
+
+void term_cursor_store(void){
+	fputs("\033[s", stdout);
+}
+
+void term_cursor_load(void){
+	fputs("\033[u", stdout);
+}
+
+void term_gotoxy(unsigned x, unsigned y){
+	printf("\033[%u;%uH", y+1, x+1);
+}
+
+void term_cursor_show(int show){
+	printf("\033[?25%c", show ? 'h' : 'l');
+}
+
+void term_cursor_up(unsigned n){
+	printf("\033[%uA", n);
+}
+
+void term_cursor_down(unsigned n){
+	printf("\033[%uB", n);
+}
+
+void term_cursor_home(void){
+	fputs("\033[G", stdout);
+}
+
+void term_cursorxy(unsigned* c, unsigned* r){
+    const char *dev;
+	struct termios oldtio;
+	struct termios newtio;
+    int fd = -1;
+
+	dev = ttyname(STDIN_FILENO);
+    if( !dev ) dev = ttyname(STDOUT_FILENO);
+	if( !dev ) return;
+
+    while( (fd = open(dev, O_RDWR | O_NOCTTY)) == -1 && errno == EINTR);
+    if( fd == -1) return;
+
+    if( tcgetattr(fd, &oldtio) ){
+		dbg_error("tcgetattr: %m");
+		close(fd);
+		return;
+	}
+
+	newtio = oldtio;
+	newtio.c_lflag &= ~ICANON;
+    newtio.c_lflag &= ~ECHO;
+    newtio.c_cflag &= ~CREAD;
+	if( tcsetattr(fd, TCSANOW, &newtio) ){
+		dbg_error("tcsetattr: %m");
+		close(fd);
+		return;
+	}
+	
+	write(fd, "\033[6n",4);
+	char ch;
+	if( read(fd, &ch, 1) != 1 || ch != 0x1B ){
+		dbg_error("aspectd 0x1B, got 0x%X '%c'", ch, ch);	
+		goto END;
+	}
+	if( read(fd, &ch, 1) != 1 || ch != '[' ){
+		dbg_error("aspectd [");	
+		goto END;
+	}
+	*r = 0;
+	while( read(fd, &ch, 1) == 1 && ch >= '0' && ch <= '9' ){
+		*r = 10 * *r + (ch-'0');
+	}
+	if( ch != ';' ){
+		dbg_error("aspectd ;");
+		goto END;
+	}
+
+	*c = 0;
+	while( read(fd, &ch, 1) == 1 && ch >= '0' && ch <= '9' ){
+		*c = 10 * *c + (ch-'0');
+	}
+	
+	if( ch != 'R' ){
+		dbg_error("aspectd R");
+		goto END;
+	}
+
+	--(*r);
+	--(*c);
+END:
+	tcsetattr(fd, TCSANOW, &oldtio);
+	close(fd);
+}
+
+__private char* CHAR_VBAR[] = { " ", "▂","▃","▄","▅","▆","▇","█" };
+void term_vbar(double v){
+	unsigned const h = sizeof_vector(CHAR_VBAR);
+	unsigned q = (v*h)/100.0;
+	if( q >= h ) q = h-1;
+	fputs(CHAR_VBAR[q], stdout);
+}
+
+__private char* CHAR_HBAR[] = { " ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█" };
+void term_hhbar(unsigned w, double v){
+	unsigned const tb = sizeof_vector(CHAR_HBAR);
+	unsigned e = (v * (w*(tb-1)) / 100.0);
+	unsigned f = e / (tb-1);
+	if( f > w ) f = w;
+	print_repeats(f, CHAR_HBAR[tb-1]);
+	w -= f;
+	f = e % (tb-1);
+	fputs(CHAR_HBAR[f], stdout);
+	if( w ) --w;
+	print_repeat(w, ' ');
+}
+
+void term_bar_double(unsigned w, unsigned c1, unsigned c2, double v1, double v2){
+	unsigned w1 = (v1 * w) / 100.0;
+	unsigned w2 = (v2 * w) / 100.0;
+	unsigned eq = 0;
+	if( w1 > w ) w1 = w;
+	if( w2 > w ) w2 = w;
+
+	if( w1 > w2 ){
+		eq = w2;
+	}
+	else{
+		eq = w1;
+	}
+	w2 -= eq;
+	w1 -= eq;
+	if( eq ){
+		colorfg_set(c2);
+		colorbg_set(c1);
+		print_repeats(eq, CHAR_LOWER);
+		colorfg_set(0);
+		w -= eq;
+	}
+	if( w1 ){
+		colorfg_set(c1);
+		print_repeats(w1, CHAR_UPPER);
+		colorfg_set(0);
+		w -= w1;
+	}
+	else if( w2 ){
+		colorfg_set(c2);
+		print_repeats(w2, CHAR_LOWER);
+		colorfg_set(0);
+		w -= w2;
+	}
+	if( w ){
+		print_repeat(w, ' ');
+	}
+}
+
+__private mutex_t LLOCK;
+__private int**   RLINE;
+
+void term_reserve_enable(void){
+	mutex_ctor(&LLOCK);
+	RLINE = MANY(int*, 16);
+}
+
+int term_reserve_line(int *line){
+	int ret = 0;
+	mlock(&LLOCK){
+		unsigned x, y;
+		term_cursorxy(&x, &y);
+		*line = y;
+		putchar('\n');
+		term_cursorxy(&x, &y);
+		if( (int)y == *line ){
+			ret = 1;
+			mforeach(RLINE, i){
+				--(*RLINE[i]);
+			}
+		}
+		unsigned il = mem_ipush(&RLINE);
+		RLINE[il] = line;
+	}
+	return ret;
+}
+
+void term_release_line(int* line){
+	mlock(&LLOCK){
+		mforeach(RLINE, i){
+			if( RLINE[i] == line ){
+				RLINE = mem_delete(RLINE, i, 1);
+				break;
+			}
+		}
+	}
+}
+
+void term_lock(void){
+	mutex_lock(&LLOCK);
+}
+
+void term_unlock(void){
+	mutex_unlock(&LLOCK);
+}
+
 __private int isyesno(const char* in, int noyes){
 	__private char* noyesmap[][5] = {
 		{ "n", "no" , "N", "No" , "NO"  },
@@ -252,24 +555,27 @@ __private int idname(char** list, const char* n, unsigned len){
 	return -1;
 }
 
-__private char** idadd(char** sel, char* name){
+__private unsigned* idadd(unsigned* sel, unsigned id){
 	mforeach(sel, i){
-		if( !strcmp(sel[i],name) ) return sel;
+		if( sel[i] == id ) return sel;
 	}
 	sel = mem_upsize(sel, 1);
-	sel[mem_header(sel)->len++] = name;
+	sel[mem_header(sel)->len++] = id;
 	return sel;
 }
 
-__private char** idselection(const char* p, char** list){
+__private unsigned* idselection(const char* p, char** list){
 	unsigned const count = mem_header(list)->len;
-	char** sel = MANY(char*, count);
+	unsigned* sel = MANY(unsigned, count);
 	if( !p ) return sel;
 	p = str_skip_h(p);
 	if( !*p ) return sel;
+	dbg_info("");
 	do{
+		dbg_info("");
 		const char* stp = p;
 		int id = idnumber(&p);
+		dbg_info("id: %d line:%.*s", id, (int)(p-stp), stp);
 		if( id == -1 ){
 			const char* end = p;
 			while( *end && *end != ' ' && *end != ',' && *end != '\t' ) ++end;
@@ -278,7 +584,7 @@ __private char** idselection(const char* p, char** list){
 		}
 		if( id == INT_MIN ){
 			for( unsigned i = 0; i < count; ++i ){
-				sel[i] = list[i];
+				sel[i] = i;
 			}
 			mem_header(sel)->len = count;
 			break;
@@ -289,7 +595,7 @@ __private char** idselection(const char* p, char** list){
 			return NULL;
 		}
 		else{
-			sel = idadd(sel, list[id]);
+			sel = idadd(sel, id);
 		}
 		
 		p = str_skip_h(p);
@@ -298,62 +604,42 @@ __private char** idselection(const char* p, char** list){
 			mem_free(sel);
 			return NULL;
 		}
-		p = str_skip_h(p+1);
+		if( *p == ',' ) ++p;
+		dbg_info("line:'%s'", p);
+		p = str_skip_h(p);
 	}while( *p );
 	return sel;
 }
 
-char** readline_listid(const char* prompt, char** list){
+unsigned* readline_listid(const char* prompt, char** list, unsigned* fgcol){
 	unsigned w;
 	term_wh(&w, NULL);
 	unsigned cw = 0;
+	unsigned ncol = fgcol ? mem_header(fgcol)->len : 0;
 	mforeach(list, i){
 		unsigned nw = snprintf(NULL, 0, "[%u]%s  ", i, list[i]);
 		if( nw + cw > w ){
 			cw = 0;
 			putchar('\n');
 		}
+		if( i < ncol ) colorfg_set(fgcol[i]);
 		printf("[%u]%s  ", i, list[i]);
+		if( i < ncol ) colorfg_set(0);
 		cw += nw;
 	}
 	putchar('\n');
 	putchar('\n');
-	char** sel = NULL;
+	unsigned* sel = NULL;
 	puts(prompt);
 	do{
 		puts("(Default nothing; 0,1,2,3; name,name,...; * all)");
 		char* in = readline("> ");
+		dbg_info("in:'%s'", in);
 		sel = idselection(in, list);
 		free(in);
 	}while(!sel);
 	return sel;
 }
-
-__private __atomic volatile unsigned long PROG_I;
-__private __atomic volatile unsigned long PROG_T;
-
-void progress_begin(const char* prompt, unsigned long max){
-	PROG_T = max;
-	PROG_I = 0;
-	fflush(stdout);
-	dprintf(STDOUT_FILENO, "[%3u%%] %s", 0, prompt);
-}
-
-void progress(const char* prompt, unsigned long inc){
-	PROG_I += inc;
-	if( PROG_I > PROG_T ) PROG_I = PROG_T;
-	dprintf(STDOUT_FILENO, "\r[%3lu%%] %s", PROG_I * 100 / PROG_T, prompt);
-}
-
-void progress_end(const char* prompt){
-	dprintf(STDOUT_FILENO, "\r[%3u%%] %s\n", 100, prompt);
-}
-
-
-
-
-
-
 
 typedef struct highlight{
 	unsigned fg;
@@ -367,47 +653,36 @@ typedef struct revAstHighlight{
 	struct revAstHighlight* child;
 	highlight_s* hi;
 }revAstHighlight_s;
-/*
-__private highlight_s* hi_new(unsigned fg, unsigned bg, unsigned bold, unsigned sep){
-	highlight_s* hi = NEW(highlight_s);
-	hi->fg   = fg;
-	hi->bg   = bg;
-	hi->bold = bold;
-	hi->sep  = sep;
-	return hi;
-}
 
-__private revAstHighlight_s* rah_new(revAstHighlight_s* parent, const char* type, highlight_s* hi){
-	mforeach(parent->child, i){
-		if( !strcmp(parent->child[i].type, type) ){
-			if( hi && !parent->child[i].hi ) parent->child[i].hi = mem_borrowed(hi);
-			return &parent->child[i];
-		}
-	}
-	parent->child = mem_upsize(parent->child, 1);
-	revAstHighlight_s* rah = &parent->child[mem_header(parent->child)->len++];
-	rah->hi    = mem_borrowed(hi);
-	rah->type  = type;
-	rah->child = MANY(revAstHighlight_s, 1);
-	return rah;
-}
-*/
 __private revAstHighlight_s* bash_highlight(void){
 	__private highlight_s hcomment  = { 14, 0, 0, 0};
 	__private highlight_s hfunction = {  7, 0, 0, 0};
 	__private highlight_s hvardec   = { 14, 0, 1, 0};
 	__private highlight_s hvar      = { 23, 0, 1, 0};
 	__private highlight_s hcommand  = { 11, 0, 0, 0};
-	__private highlight_s harg      = {255, 0, 0, 0};
+	__private highlight_s harg      = { 15, 0, 0, 0};
 	__private highlight_s hstring   = { 13, 0, 0, 0};
-	__private highlight_s hassign   = {255, 0, 0, 0};
+	__private highlight_s hassign   = { 15, 0, 0, 0};
 	
+	__private revAstHighlight_s array[] = {
+		{ "variable_assignment", NULL, &harg },
+		{ NULL, NULL, NULL }
+	};
+
+	__private revAstHighlight_s list[] = {
+		{ "compound_statement", NULL, &hcommand },
+		{ NULL, NULL, NULL }
+	};
+
 	__private revAstHighlight_s bashAny[] = {
 		{ "function_definition" , NULL, &hfunction},
 		{ "compound_statement"  , NULL, &hfunction},
 		{ "simple_expansion"    , NULL, &hvar     },
 		{ "expansion"           , NULL, &hvar     },
 		{ "command_substitution", NULL, &hvar     },
+		{ "array"               , NULL, &hvar     },
+		{ "subscript"           , NULL, &hvar     },
+		{ "subshell"            , NULL, &hvar     },
 		{ "pipeline"            , NULL, &hcommand },
 		{ "if_statement"        , NULL, &hcommand },
 		{ "for_statement"       , NULL, &hcommand },
@@ -420,6 +695,7 @@ __private revAstHighlight_s* bash_highlight(void){
 		{ "arithmetic_expansion", NULL, &hassign  },
 		{ "variable_assignment" , NULL, &hassign  },
 		{ "string"              , NULL, &hstring  },
+		{ "list"                , list, NULL      },
 		{ NULL, NULL, NULL }
 	};
 	
@@ -427,17 +703,23 @@ __private revAstHighlight_s* bash_highlight(void){
 		{ "variable_assignment", NULL, &hvardec },
 		{ "for_statement"      , NULL, &hvardec },
 		{ "binary_expression"  , NULL, &hvardec },
+		{ "declaration_command", NULL, &harg    },
 		{ "simple_expansion"   , NULL, &hvar    },
 		{ "expansion"          , NULL, &hvar    },
+		{ "subscript"          , NULL, &hvar    },
 		{ NULL, NULL, NULL }
 	};
 	
 	__private revAstHighlight_s word[] = {
-		{ "command_name"        , NULL, &hcommand },
-		{ "declaration_command" , NULL, &hcommand },
-		{ "function_definition" , NULL, &hfunction},
-		{ "command"             , NULL, &harg     },
-		{ "file_redirect"       , NULL, &hassign  },
+		{ "command_name"        , NULL , &hcommand },
+		{ "declaration_command" , NULL , &hcommand },
+		{ "concatenation"       , NULL , &hcommand },
+		{ "subscript"           , NULL , &hcommand },
+		{ "function_definition" , NULL , &hfunction},
+		{ "command"             , NULL , &harg     },
+		{ "file_redirect"       , NULL , &hassign  },
+		{ "variable_assignment" , NULL , &hcommand },
+		{ "array"               , array, NULL      },
 		{ NULL, NULL, NULL }
 	};
 	
@@ -483,7 +765,7 @@ __private void dbg_print_stack(char** stack){
 	printf("@]>");
 }
 
-__private void bash_tokenize_source(const TSNode node, const char *source, char*** stack, revAstHighlight_s* rah) {
+__private void highlight_source(const TSNode node, const char *source, char*** stack, revAstHighlight_s* rah) {
 	const char *type = ts_node_type(node);
 	*stack = mem_upsize(*stack,1);
 	(*stack)[mem_header(*stack)->len++] = (char*)type;
@@ -492,7 +774,7 @@ __private void bash_tokenize_source(const TSNode node, const char *source, char*
 	if( child_count ){
 		for( unsigned i = 0; i < child_count; ++i ){
 			TSNode child = ts_node_child(node, i);
-			bash_tokenize_source(child, source, stack, rah);
+			highlight_source(child, source, stack, rah);
 		}
 	}
 	else{
@@ -543,7 +825,7 @@ void print_highlight(const char* source, const char* lang) {
 	TSNode root_node = ts_tree_root_node(tree);
 	dbg_info("Root node type: %s\n", ts_node_type(root_node));
 	__free char** stack = MANY(char*, 10);
-	bash_tokenize_source(root_node, source, &stack, rah);
+	highlight_source(root_node, source, &stack, rah);
 	mem_free(stack);
 	fflush(stdout);
 	ts_tree_delete(tree);

@@ -4,7 +4,7 @@
 #include <notstd/core.h>
 #include <notstd/fzs.h>
 
-#include <auror/pkgdesc.h>
+//#include <auror/pkgdesc.h>
 #include <auror/ini.h>
 
 #define PACMAN_LOCAL_INSTALL "/var/lib/pacman/local"
@@ -23,7 +23,7 @@
 #define PACMNA_INSTALL_DEPS  "sudo pacman -Syu --needed"
 
 typedef struct pacman{
-	ddatabase_s** db;
+	//ddatabase_s** db;
 	ini_s         config;
 	char*         dbLocalPath;
 	unsigned      iddbaur;
@@ -34,7 +34,7 @@ typedef struct pacman{
 void pacman_ctor(pacman_s* pacman);
 void pacman_upgrade(void);
 void pacman_search(pacman_s* pacman, const char* name, fzs_s** matchs);
-void pacman_scan_installed(pacman_s* pacman, ddatabase_s* db);
-desc_s* pacman_pkg_search(pacman_s* pacman, const char* name);
+//void pacman_scan_installed(pacman_s* pacman, ddatabase_s* db);
+//desc_s* pacman_pkg_search(pacman_s* pacman, const char* name);
 
 #endif
